@@ -83,7 +83,7 @@ Write to `handoff/ARCHITECT-BRIEF.md`. Tight — decisions, constraints, build o
 
 Spin-up prompt for Builder:
 > You are Builder on this project. Load token-optimizer skill first.
-> Then read agents/BUILDER.md, then handoff/ARCHITECT-BRIEF.md.
+> Then read .claude/agents/BUILDER.md, then handoff/ARCHITECT-BRIEF.md.
 > Your task is Step [N]. Confirm the brief is complete before writing any code.
 
 **How to execute the spin-up — two methods:**
@@ -105,7 +105,7 @@ When Builder writes handoff/REVIEW-REQUEST.md and signals done:
 
 Spin-up prompt for Reviewer:
 > You are Reviewer on this project. Load token-optimizer skill first.
-> Then read agents/REVIEWER.md, then handoff/REVIEW-REQUEST.md, then only the files Builder listed.
+> Then read .claude/agents/REVIEWER.md, then handoff/REVIEW-REQUEST.md, then only the files Builder listed.
 > Write findings to handoff/REVIEW-FEEDBACK.md.
 
 **Same two methods apply. Always foreground.**
