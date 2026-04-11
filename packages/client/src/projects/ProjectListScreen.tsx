@@ -10,16 +10,17 @@
  */
 
 import { useRef, useState, type FC, type ChangeEvent } from 'react';
-import type { ProjectId, ProjectMeta } from '@kicable/shared';
+import type { Project, ProjectId, ProjectMeta } from '@kicable/shared';
 import type { StorageAdapter } from '@kicable/shared';
 import { useProjects } from './useProjects.js';
 import StorageBanner from './StorageBanner.js';
 
 interface Props {
   storage: StorageAdapter;
+  onOpenProject: (project: Project) => void;
 }
 
-const ProjectListScreen: FC<Props> = ({ storage }) => {
+const ProjectListScreen: FC<Props> = ({ storage, onOpenProject }) => {
   const {
     projects,
     loading,
@@ -99,6 +100,17 @@ const ProjectListScreen: FC<Props> = ({ storage }) => {
       await exportProject(id);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to export project');
+    }
+  }
+
+  async function handleOpen(id: ProjectId) {
+    setActionError(null);
+    try {
+      const project = await storage.getProject(id);
+      if (!project) throw new Error('Project not found');
+      onOpenProject(project);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to open project');
     }
   }
 
@@ -258,6 +270,21 @@ const ProjectListScreen: FC<Props> = ({ storage }) => {
                   </div>
 
                   <div style={{ display: 'flex', gap: '0.375rem', flexShrink: 0 }}>
+                    <button
+                      onClick={() => void handleOpen(project.id as ProjectId)}
+                      style={{
+                        padding: '0.375rem 0.75rem',
+                        background: '#2563eb',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        fontSize: '0.8125rem',
+                      }}
+                    >
+                      Open
+                    </button>
                     <button
                       onClick={() => void handleExport(project.id as ProjectId)}
                       title="Export project as .chd file"
