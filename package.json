@@ -1,0 +1,32 @@
+{
+  "name": "kicable",
+  "version": "0.0.1",
+  "private": true,
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "scripts": {
+    "dev": "pnpm --filter client dev",
+    "build": "pnpm --filter shared build && pnpm --filter client build",
+    "build:static": "pnpm --filter shared build && VITE_BACKEND_URL= pnpm --filter client build",
+    "test": "pnpm --filter shared test && pnpm --filter client test",
+    "test:coverage": "pnpm --filter shared test:coverage && pnpm --filter client test:coverage",
+    "lint": "eslint packages --ext .ts,.tsx",
+    "lint:fix": "eslint packages --ext .ts,.tsx --fix",
+    "format": "prettier --write packages",
+    "format:check": "prettier --check packages",
+    "typecheck": "pnpm --filter shared typecheck && pnpm --filter client typecheck"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-react": "^7.37.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "prettier": "^3.3.0",
+    "typescript": "^5.5.0"
+  }
+}
