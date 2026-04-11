@@ -1,12 +1,9 @@
 import type { FC } from 'react';
+import { storage } from './storage/index.js';
+import ProjectListScreen from './projects/ProjectListScreen.js';
 
 const App: FC = () => {
-  return (
-    <div>
-      <h1>Cable Harness Designer</h1>
-      <p>Loading…</p>
-    </div>
-  );
+  return <ProjectListScreen storage={storage} />;
 };
 
 export default App;
