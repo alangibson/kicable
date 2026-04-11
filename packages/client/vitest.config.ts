@@ -20,6 +20,8 @@ export default defineConfig({
         'src/**/*.test.{ts,tsx}',
         'src/main.tsx',
         'src/vite-env.d.ts',
+        // Entry-point that reads import.meta.env; no testable logic beyond adapter selection
+        'src/storage/index.ts',
       ],
     },
   },

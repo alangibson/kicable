@@ -11,6 +11,7 @@ Spec: PRD.md
 | Step | Description | Status | Date |
 |------|-------------|--------|------|
 | 1 | §12 Infrastructure & Build Setup | Done | 2026-04-11 |
+| 2 | §5 Storage Layer | Done | 2026-04-11 |
 
 ---
 
@@ -38,6 +39,24 @@ Spec: PRD.md
 - `pnpm --filter @kicable/shared test` — 19 tests pass
 - `pnpm --filter @kicable/client test` — 1 test passes
 - `pnpm build:static` — dist/ produced (142 kB JS, no server dependency)
+
+---
+
+## Step 2 — §5 Storage Layer
+
+**Files created/modified:**
+- `packages/client/src/__tests__/storage/IndexedDBAdapter.test.ts` — 22-test suite using `fake-indexeddb`
+- `packages/client/vitest.config.ts` — exclude `src/storage/index.ts` from coverage (entry-point, uses `import.meta.env`)
+- `TODO/5-storage-layer.md` — all items checked
+
+**Decisions:**
+- `fake-indexeddb/auto` resets per-test via `new IDBFactory()` in `beforeEach` for full isolation
+- Proxy used to simulate large buffers for size-guard tests; DataCloneError from fake-indexeddb caught, guards verified before the store call
+- `src/storage/index.ts` excluded from coverage (same treatment as `main.tsx`) — no testable logic, only `import.meta.env` branching
+
+**Verification:**
+- `pnpm --filter @kicable/client test` — 23 tests pass (22 adapter + 1 App)
+- `pnpm --filter @kicable/client test:coverage` — 100% statements/branches/functions/lines on included files
 
 ---
 
