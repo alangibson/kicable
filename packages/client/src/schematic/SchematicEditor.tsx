@@ -14,9 +14,10 @@
  * FR-SE-09 / NFR-R-01: Auto-save via useEditorState + background worker.
  */
 
-import { useCallback, useState, type FC } from 'react';
-import type { Project, SearchResultKind } from '@kicable/shared';
+import { useCallback, useEffect, useRef, useState, type FC } from 'react';
+import type { Component, Project, SearchResultKind } from '@kicable/shared';
 import type { StorageAdapter } from '@kicable/shared';
+import { nowIso } from '@kicable/shared';
 import { GlobalSearch } from '../components/GlobalSearch.js';
 import { WireListPanel } from '../components/WireListPanel.js';
 import { useEditorState } from './useEditorState.js';
@@ -37,6 +38,47 @@ export const SchematicEditor: FC<Props> = ({ project, storage, onClose }) => {
   const [selection, setSelection] = useState<CanvasSelection>(null);
   const [selectedWireId, setSelectedWireId] = useState<string | null>(null);
 
+  // Global library components — used by LibraryPanel and canvas node rendering
+  const [globalComponents, setGlobalComponents] = useState<Component[]>(
+    // Seed from project.components for CHD-imported projects
+    project.components,
+  );
+
+  useEffect(() => {
+    void storage.listComponents().then((all) => {
+      // Merge: global library + any project-specific components (CHD imports)
+      const ids = new Set(all.map((c) => c.id));
+      const projectOnly = project.components.filter((c) => !ids.has(c.id));
+      setGlobalComponents([...all, ...projectOnly]);
+    });
+  }, [storage, project.components]);
+
+  // Keep a ref to latest project for the save callback below
+  const projectRef = useRef(project);
+  useEffect(() => { projectRef.current = project; }, [project]);
+
+  /**
+   * When a component is dropped onto the canvas for the first time, copy it
+   * into project.components so CHD exports are self-contained.
+   */
+  const handleAddComponentToProject = useCallback(
+    (comp: Component) => {
+      const current = projectRef.current;
+      if (current.components.some((c) => c.id === comp.id)) return;
+      const updated: Project = {
+        ...current,
+        components: [...current.components, comp],
+        meta: { ...current.meta, updatedAt: nowIso() },
+      };
+      void storage.saveProject(updated);
+      // Also ensure it's in our local render list (should already be via globalComponents)
+      setGlobalComponents((prev) =>
+        prev.some((c) => c.id === comp.id) ? prev : [...prev, comp],
+      );
+    },
+    [storage],
+  );
+
   // FR-SN-01: navigate canvas to a search result
   const handleNavigateTo = useCallback((kind: SearchResultKind, id: string) => {
     if (kind === 'wire') setSelectedWireId(id);
@@ -44,13 +86,11 @@ export const SchematicEditor: FC<Props> = ({ project, storage, onClose }) => {
     else if (kind === 'wire') setSelection({ kind: 'wire', id });
   }, []);
 
-  // Wire list row click
   const handleSelectWire = useCallback((wireId: string) => {
     setSelectedWireId(wireId);
     setSelection({ kind: 'wire', id: wireId });
   }, []);
 
-  // Canvas selection change
   const handleSelectionChange = useCallback((sel: CanvasSelection) => {
     setSelection(sel);
     if (sel?.kind === 'wire') setSelectedWireId(sel.id);
@@ -167,16 +207,17 @@ export const SchematicEditor: FC<Props> = ({ project, storage, onClose }) => {
 
       {/* ── Middle row: Library | Canvas | Properties ── */}
       <div style={{ flex: '1 1 0', minHeight: 0, display: 'flex', overflow: 'hidden' }}>
-        {/* Library panel (FR-SE-02, FR-CL-09) */}
-        <LibraryPanel components={project.components} storage={storage} />
+        {/* Library panel — shows global library (FR-SE-02, FR-CL-09) */}
+        <LibraryPanel storage={storage} />
 
         {/* Canvas (FR-SE-01 through FR-SE-10, NFR-P-01) */}
         <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
           <SchematicCanvas
             schematic={schematic}
-            project={project}
+            components={globalComponents}
             editor={editor}
             onSelectionChange={handleSelectionChange}
+            onAddComponentToProject={handleAddComponentToProject}
           />
         </div>
 

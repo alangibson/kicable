@@ -59,11 +59,12 @@ export type CanvasSelection =
 
 interface Props {
   schematic: Schematic;
-  project: { components: Component[] };
+  /** All components available for rendering nodes (global library) */
+  components: Component[];
   editor: UseEditorStateReturn;
   onSelectionChange: (sel: CanvasSelection) => void;
-  /** Passed in from parent as the drag-over transfer data key */
-  dragTransferKey?: string;
+  /** Called when a component is dropped that isn't yet in project.components */
+  onAddComponentToProject: (comp: Component) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -143,9 +144,10 @@ function schematicToRFEdges(
 
 const SchematicCanvas: FC<Props> = ({
   schematic,
-  project,
+  components,
   editor,
   onSelectionChange,
+  onAddComponentToProject,
 }) => {
   const {
     upsertConnector,
@@ -168,7 +170,7 @@ const SchematicCanvas: FC<Props> = ({
 
   // ── Derive RF state from schematic ──
   const initialNodes = useMemo(
-    () => schematicToRFNodes(schematic, project.components),
+    () => schematicToRFNodes(schematic, components),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
@@ -186,9 +188,9 @@ const SchematicCanvas: FC<Props> = ({
   useEffect(() => {
     if (schematic === lastSchematicRef.current) return;
     lastSchematicRef.current = schematic;
-    setNodes(schematicToRFNodes(schematic, project.components));
+    setNodes(schematicToRFNodes(schematic, components));
     setEdges(schematicToRFEdges(schematic, (id, x, y) => addWaypointRef.current(id, x, y)));
-  }, [schematic, project.components, setNodes, setEdges]);
+  }, [schematic, components, setNodes, setEdges]);
 
   // ── Waypoint add implementation ──
   const handleAddWaypoint = useCallback(
@@ -373,6 +375,9 @@ const SchematicCanvas: FC<Props> = ({
       const x = e.clientX - reactFlowBounds.left;
       const y = e.clientY - reactFlowBounds.top;
 
+      // Copy component into project if not already present (for CHD portability)
+      onAddComponentToProject(comp);
+
       const instance: ConnectorInstance = {
         id: makeId<'ConnectorInstance'>(),
         componentId: comp.id,
@@ -396,7 +401,7 @@ const SchematicCanvas: FC<Props> = ({
         },
       ]);
     },
-    [upsertConnector, setNodes],
+    [upsertConnector, setNodes, onAddComponentToProject],
   );
 
   const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {

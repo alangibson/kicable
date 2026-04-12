@@ -1,8 +1,9 @@
 /**
- * LibraryPanel — left sidebar listing project components (FR-SE-02).
+ * LibraryPanel — left sidebar showing the global component library (FR-SE-02).
  *
- * Each component card is draggable; the SchematicCanvas handles the drop
- * to place a ConnectorInstance node.
+ * Loads all components from storage so the user can search the full global
+ * library and drag connectors onto the canvas. The canvas handles the drop
+ * and copies the component into the project on first use.
  *
  * FR-CL-09: Primary image shown as thumbnail when available.
  */
@@ -14,11 +15,9 @@ import type { StorageAdapter } from '@kicable/shared';
 import { imageBlobKey } from '@kicable/shared';
 
 interface Props {
-  components: Component[];
   storage: StorageAdapter;
 }
 
-/** Load a data-URI for the primary image of a component, or null. */
 async function loadPrimaryDataUrl(
   comp: Component,
   storage: StorageAdapter,
@@ -33,9 +32,15 @@ async function loadPrimaryDataUrl(
   return `data:${primary.mimeType};base64,${b64}`;
 }
 
-const LibraryPanel: FC<Props> = ({ components, storage }) => {
+const LibraryPanel: FC<Props> = ({ storage }) => {
+  const [components, setComponents] = useState<Component[]>([]);
   const [query, setQuery] = useState('');
   const [thumbnails, setThumbnails] = useState<Map<string, string>>(new Map());
+
+  // Load global library
+  useEffect(() => {
+    void storage.listComponents().then(setComponents);
+  }, [storage]);
 
   // Load thumbnails for components that have images
   useEffect(() => {
@@ -114,9 +119,7 @@ const LibraryPanel: FC<Props> = ({ components, storage }) => {
       <div style={{ flex: 1, overflowY: 'auto', padding: '6px 8px' }}>
         {filtered.length === 0 && (
           <p style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', marginTop: 16 }}>
-            {components.length === 0
-              ? 'No components in project'
-              : 'No matches'}
+            {components.length === 0 ? 'No components in library' : 'No matches'}
           </p>
         )}
         {filtered.map((comp) => {
@@ -140,7 +143,6 @@ const LibraryPanel: FC<Props> = ({ components, storage }) => {
                 alignItems: 'flex-start',
               }}
             >
-              {/* FR-CL-09: primary image thumbnail */}
               {thumb && (
                 <img
                   src={thumb}
