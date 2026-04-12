@@ -2,21 +2,23 @@
   "name": "kicable",
   "version": "0.0.1",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "engines": {
-    "node": ">=20",
-    "pnpm": ">=9"
+    "node": ">=20"
   },
   "scripts": {
-    "dev": "pnpm --filter client dev",
-    "build": "pnpm --filter shared build && pnpm --filter client build",
-    "build:static": "pnpm --filter shared build && VITE_BACKEND_URL= pnpm --filter client build",
-    "test": "pnpm --filter shared test && pnpm --filter client test",
-    "test:coverage": "pnpm --filter shared test:coverage && pnpm --filter client test:coverage",
+    "dev": "npm run dev -w @kicable/client",
+    "build": "npm run build -w @kicable/shared && npm run build -w @kicable/client",
+    "build:static": "npm run build -w @kicable/shared && VITE_BACKEND_URL= npm run build -w @kicable/client",
+    "test": "npm run test -w @kicable/shared && npm run test -w @kicable/client",
+    "test:coverage": "npm run test:coverage -w @kicable/shared && npm run test:coverage -w @kicable/client",
     "lint": "eslint packages --ext .ts,.tsx",
     "lint:fix": "eslint packages --ext .ts,.tsx --fix",
     "format": "prettier --write packages",
     "format:check": "prettier --check packages",
-    "typecheck": "pnpm --filter shared typecheck && pnpm --filter client typecheck"
+    "typecheck": "npm run typecheck -w @kicable/shared && npm run typecheck -w @kicable/client"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
