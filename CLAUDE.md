@@ -1,5 +1,17 @@
 # Three Man Team — Session Router
 
+## Package Manager
+
+**Use `npm`, not `pnpm`.** The project uses npm workspaces (`package-lock.json`).
+Never run `pnpm install` or any `pnpm` command — it generates a `pnpm-lock.yaml`
+that should not be committed.
+
+```
+npm install              # install deps
+npm run test -w @kicable/client   # run workspace tests
+npm run build            # build all
+```
+
 ## Token Rules — Always Active
 
 ```
