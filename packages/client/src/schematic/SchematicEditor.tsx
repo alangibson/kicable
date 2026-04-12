@@ -167,8 +167,8 @@ export const SchematicEditor: FC<Props> = ({ project, storage, onClose }) => {
 
       {/* ── Middle row: Library | Canvas | Properties ── */}
       <div style={{ flex: '1 1 0', minHeight: 0, display: 'flex', overflow: 'hidden' }}>
-        {/* Library panel (FR-SE-02) */}
-        <LibraryPanel components={project.components} />
+        {/* Library panel (FR-SE-02, FR-CL-09) */}
+        <LibraryPanel components={project.components} storage={storage} />
 
         {/* Canvas (FR-SE-01 through FR-SE-10, NFR-P-01) */}
         <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>

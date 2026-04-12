@@ -13,6 +13,7 @@ Spec: PRD.md
 | 1 | §12 Infrastructure & Build Setup | Done | 2026-04-11 |
 | 2 | §5 Storage Layer | Done | 2026-04-11 |
 | 3 | §6.2 Schematic Editor | Done | 2026-04-12 |
+| 4 | §6.3 Component Library | Done | 2026-04-12 |
 
 ---
 
@@ -94,6 +95,45 @@ Spec: PRD.md
 - `pnpm --filter @kicable/client typecheck` — no new errors (pre-existing test errors unchanged)
 - `pnpm --filter @kicable/shared test` — 19 tests pass
 - `pnpm --filter @kicable/client test` — 38 tests pass
+
+---
+
+---
+
+## Step 4 — §6.3 Component Library
+
+**Files created:**
+- `packages/shared/src/builtinLibrary.ts` — 24 built-in components (Deutsch DT ×8, AMP Superseal ×8, TE MCP ×8) + AWG/mm² gauge arrays (FR-CL-01)
+- `packages/client/src/library/useLibrary.ts` — CRUD hook covering component save/delete (version bump on update), image attach/rename/reorder/delete/data-URL loader, STEP attach/remove/download, and built-in seeder (FR-CL-02, FR-CL-03, FR-CL-06–FR-CL-13, FR-CL-15–FR-CL-18)
+- `packages/client/src/library/libraryIo.ts` — JSON export (images embedded as Base64 data URIs) + JSON import (restores blobs, re-assigns IDs to prevent collisions) (FR-CL-04, FR-CL-12)
+- `packages/client/src/library/ComponentEditor.tsx` — form for part number / manufacturer / pin count / gender / description + per-pin label + function dropdowns (FR-CL-02, FR-CL-03)
+- `packages/client/src/library/ImageGallery.tsx` — image attachment (MIME/size guard), view-type selector, primary star, drag-to-reorder, rename, recategorize, delete (FR-CL-07–FR-CL-10, FR-CL-13)
+- `packages/client/src/library/StepFilePanel.tsx` — STEP attach (ext guard, size guard, 50 MB warning), metadata display, download (model/step MIME), external viewer link, remove (FR-CL-15–FR-CL-19)
+- `packages/client/src/library/ComponentLibraryScreen.tsx` — full library management screen: list + filter, new/edit/delete component, tab-switched detail panel (Details / Images / STEP), Export JSON + Import JSON (FR-CL-01–FR-CL-04, FR-CL-06–FR-CL-13, FR-CL-15–FR-CL-19)
+- `packages/client/src/__tests__/library/libraryIo.test.ts` — 10 tests covering export/import round-trips, Base64 embedding, missing-blob graceful handling, format validation, and built-in component shape checks
+
+**Files modified:**
+- `packages/shared/src/schematic.ts` — added `componentVersion` field to `ConnectorInstanceSchema` (FR-CL-06)
+- `packages/shared/src/index.ts` — re-export `builtinLibrary`
+- `packages/client/src/schematic/LibraryPanel.tsx` — loads primary image as thumbnail (FR-CL-09); now accepts `storage` prop
+- `packages/client/src/schematic/SchematicEditor.tsx` — passes `storage` to LibraryPanel; fills `componentVersion` on ConnectorInstance creation
+- `packages/client/src/schematic/canvas/SchematicCanvas.tsx` — `componentVersion: comp.version` on ConnectorInstance create
+- `packages/client/src/App.tsx` — adds `library` screen state; renders ComponentLibraryScreen
+- `packages/client/src/projects/ProjectListScreen.tsx` — adds `onOpenLibrary` prop + "Component Library" button in header
+- `packages/client/src/__tests__/projects/ProjectListScreen.test.tsx` — added `onOpenLibrary={() => {}}` to fix required prop
+- `TODO/6.3-component-library.md` — all items checked
+
+**Decisions:**
+- Library JSON export re-assigns component/image IDs on import to prevent collision when importing the same file twice
+- STEP binaries excluded from library JSON (can be 200 MB); CHD format already handles STEP blobs
+- Built-in seed fires only when library is empty; seeds are indistinguishable from user-created components once stored
+- `componentVersion` defaults to 0 on the schema so existing schematics round-trip without migration
+
+**Verification:**
+- `pnpm --filter @kicable/shared build` — clean
+- `pnpm --filter @kicable/client typecheck` — no new errors (pre-existing test errors unchanged)
+- `pnpm --filter @kicable/shared test` — 19 tests pass
+- `pnpm --filter @kicable/client test` — 48 tests pass (10 new)
 
 ---
 

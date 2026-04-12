@@ -9,6 +9,8 @@ export const ConnectorInstanceSchema = z.object({
   id: z.string().uuid(),
   /** References Component.id from the project component library */
   componentId: z.string().uuid(),
+  /** Component.version at the time this instance was placed (FR-CL-06) */
+  componentVersion: z.number().int().nonnegative().default(0),
   /** Reference designator / label shown on canvas (e.g. "J1", "P2") */
   label: z.string().max(64).default(''),
   x: z.number().default(0),

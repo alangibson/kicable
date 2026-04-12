@@ -376,6 +376,7 @@ const SchematicCanvas: FC<Props> = ({
       const instance: ConnectorInstance = {
         id: makeId<'ConnectorInstance'>(),
         componentId: comp.id,
+        componentVersion: comp.version,
         label: '',
         x,
         y,
