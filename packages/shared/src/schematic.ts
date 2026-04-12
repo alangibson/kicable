@@ -96,6 +96,20 @@ export const ProtectiveMaterialSpanSchema = z.object({
 export type ProtectiveMaterialSpan = z.infer<typeof ProtectiveMaterialSpanSchema>;
 
 // ---------------------------------------------------------------------------
+// SpliceNode — 3-way or 4-way junction placed on the canvas (FR-SE-05)
+// ---------------------------------------------------------------------------
+
+export const SpliceNodeSchema = z.object({
+  id: z.string().uuid(),
+  x: z.number().default(0),
+  y: z.number().default(0),
+  /** 3 = T-junction, 4 = cross junction */
+  type: z.enum(['3way', '4way']).default('3way'),
+  label: z.string().max(64).default(''),
+});
+export type SpliceNode = z.infer<typeof SpliceNodeSchema>;
+
+// ---------------------------------------------------------------------------
 // Schematic — full canvas data stored in Project.schematic
 // ---------------------------------------------------------------------------
 
@@ -105,6 +119,7 @@ export const SchematicSchema = z.object({
   cables: z.array(CableSchema).default([]),
   signals: z.array(SignalSchema).default([]),
   protectiveSpans: z.array(ProtectiveMaterialSpanSchema).default([]),
+  spliceNodes: z.array(SpliceNodeSchema).default([]),
 });
 export type Schematic = z.infer<typeof SchematicSchema>;
 
@@ -114,6 +129,7 @@ export const EMPTY_SCHEMATIC: Schematic = {
   cables: [],
   signals: [],
   protectiveSpans: [],
+  spliceNodes: [],
 };
 
 // ---------------------------------------------------------------------------
