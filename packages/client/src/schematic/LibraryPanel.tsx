@@ -64,8 +64,7 @@ const LibraryPanel: FC<Props> = ({ storage }) => {
     return (
       !q ||
       c.partNumber.toLowerCase().includes(q) ||
-      c.manufacturer.toLowerCase().includes(q) ||
-      c.description.toLowerCase().includes(q)
+      c.manufacturer.toLowerCase().includes(q)
     );
   });
 
