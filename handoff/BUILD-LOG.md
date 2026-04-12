@@ -12,6 +12,7 @@ Spec: PRD.md
 |------|-------------|--------|------|
 | 1 | §12 Infrastructure & Build Setup | Done | 2026-04-11 |
 | 2 | §5 Storage Layer | Done | 2026-04-11 |
+| 3 | §6.2 Schematic Editor | Done | 2026-04-12 |
 
 ---
 
@@ -57,6 +58,42 @@ Spec: PRD.md
 **Verification:**
 - `pnpm --filter @kicable/client test` — 23 tests pass (22 adapter + 1 App)
 - `pnpm --filter @kicable/client test:coverage` — 100% statements/branches/functions/lines on included files
+
+---
+
+---
+
+## Step 3 — §6.2 Schematic Editor
+
+**Files created:**
+- `packages/client/src/workers/autosave.worker.ts` — background Web Worker that writes project to IndexedDB (NFR-R-01)
+- `packages/client/src/schematic/useEditorState.ts` — schematic state + undo/redo (100-step stack, FR-SE-08) + worker-backed auto-save (FR-SE-09)
+- `packages/client/src/schematic/canvas/ConnectorNode.tsx` — custom RF node with per-pin handles (FR-SE-02, FR-SE-03)
+- `packages/client/src/schematic/canvas/SpliceNodeComponent.tsx` — 3-way/4-way junction node (FR-SE-05)
+- `packages/client/src/schematic/canvas/WireEdge.tsx` — custom RF edge with waypoints + double-click to add (FR-SE-04)
+- `packages/client/src/schematic/canvas/SchematicCanvas.tsx` — ReactFlow canvas (FR-SE-01 to FR-SE-07, FR-SE-10, NFR-P-01)
+- `packages/client/src/schematic/LibraryPanel.tsx` — draggable component library (FR-SE-02)
+- `packages/client/src/schematic/PropertiesPanel.tsx` — property editor for selected node/wire (FR-SE-06)
+
+**Files modified:**
+- `packages/shared/src/schematic.ts` — added `SpliceNodeSchema` / `SpliceNode` type + `spliceNodes` array in `Schematic`
+- `packages/client/src/schematic/SchematicEditor.tsx` — wired Library | Canvas | Properties three-column layout; undo/redo buttons in header
+- `TODO/6.2-schematic-editor.md` — all items checked
+
+**Decisions:**
+- RF nodes/edges maintain their own state; position changes sync back to schematic on every `onNodesChange` position event
+- Splice nodes stored in `schematic.spliceNodes` (new shared field) to avoid polluting `connectors` with virtual components
+- Worker uses `openDB` directly (same schema as `IndexedDBAdapter`) — cleaner than sharing a main-thread connection
+- Undo stack capped at 100 entries (`HISTORY_MAX`) to bound memory use
+- `WireEdge` uses double-click to add waypoints (single-click is edge selection)
+- RF `snapGrid: [16, 16]` provides pin-snap behaviour for placement
+- `proOptions: { hideAttribution: true }` — MIT build, attribution not needed
+
+**Verification:**
+- `pnpm --filter @kicable/shared build` — clean
+- `pnpm --filter @kicable/client typecheck` — no new errors (pre-existing test errors unchanged)
+- `pnpm --filter @kicable/shared test` — 19 tests pass
+- `pnpm --filter @kicable/client test` — 38 tests pass
 
 ---
 
