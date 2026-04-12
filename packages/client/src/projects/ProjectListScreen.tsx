@@ -18,9 +18,10 @@ import StorageBanner from './StorageBanner.js';
 interface Props {
   storage: StorageAdapter;
   onOpenProject: (project: Project) => void;
+  onOpenLibrary: () => void;
 }
 
-const ProjectListScreen: FC<Props> = ({ storage, onOpenProject }) => {
+const ProjectListScreen: FC<Props> = ({ storage, onOpenProject, onOpenLibrary }) => {
   const {
     projects,
     loading,
@@ -137,9 +138,27 @@ const ProjectListScreen: FC<Props> = ({ storage, onOpenProject }) => {
 
   return (
     <div style={{ maxWidth: 800, margin: '0 auto', padding: '2rem 1rem', fontFamily: 'sans-serif' }}>
-      <header style={{ marginBottom: '2rem' }}>
-        <h1 style={{ margin: 0, fontSize: '1.75rem' }}>Cable Harness Designer</h1>
-        <p style={{ margin: '0.25rem 0 0', color: '#666' }}>Projects</p>
+      <header style={{ marginBottom: '2rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: '1.75rem' }}>Cable Harness Designer</h1>
+          <p style={{ margin: '0.25rem 0 0', color: '#666' }}>Projects</p>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenLibrary}
+          style={{
+            padding: '0.5rem 1rem',
+            background: '#7c3aed',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 4,
+            cursor: 'pointer',
+            fontWeight: 600,
+            fontSize: '0.875rem',
+          }}
+        >
+          Component Library
+        </button>
       </header>
 
       {/* Create new project */}

@@ -11,7 +11,7 @@ beforeEach(() => {
 });
 
 function renderScreen(storage: StorageAdapter) {
-  return render(<ProjectListScreen storage={storage} onOpenProject={() => {}} />);
+  return render(<ProjectListScreen storage={storage} onOpenProject={() => {}} onOpenLibrary={() => {}} />);
 }
 
 describe('ProjectListScreen', () => {

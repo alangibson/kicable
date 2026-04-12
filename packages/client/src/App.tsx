@@ -3,8 +3,12 @@ import type { Project } from '@kicable/shared';
 import { storage } from './storage/index.js';
 import ProjectListScreen from './projects/ProjectListScreen.js';
 import SchematicEditor from './schematic/SchematicEditor.js';
+import ComponentLibraryScreen from './library/ComponentLibraryScreen.js';
+
+type Screen = 'projects' | 'library';
 
 const App: FC = () => {
+  const [screen, setScreen] = useState<Screen>('projects');
   const [openProject, setOpenProject] = useState<Project | null>(null);
 
   if (openProject) {
@@ -17,10 +21,20 @@ const App: FC = () => {
     );
   }
 
+  if (screen === 'library') {
+    return (
+      <ComponentLibraryScreen
+        storage={storage}
+        onClose={() => setScreen('projects')}
+      />
+    );
+  }
+
   return (
     <ProjectListScreen
       storage={storage}
       onOpenProject={setOpenProject}
+      onOpenLibrary={() => setScreen('library')}
     />
   );
 };
