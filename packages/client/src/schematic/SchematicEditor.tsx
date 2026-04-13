@@ -226,6 +226,7 @@ export const SchematicEditor: FC<Props> = ({ project, storage, onClose }) => {
           selection={selection}
           schematic={schematic}
           editor={editor}
+          project={project}
         />
       </div>
 

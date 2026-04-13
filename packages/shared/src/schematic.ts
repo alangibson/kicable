@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import {
+  WireEndSchema,
+  WireSegmentSchema,
+  CableEndSchema,
+  LengthModeSchema,
+} from './schemas.js';
 
 // ---------------------------------------------------------------------------
 // ConnectorInstance — a Component placed on the canvas (FR-SE-02)
@@ -54,6 +60,26 @@ export const WireSchema = z.object({
   cableId: z.string().uuid().nullable().default(null),
   /** Intermediate canvas waypoints */
   waypoints: z.array(z.object({ x: z.number(), y: z.number() })).default([]),
+
+  // ── §6.4.2 Overall Length ────────────────────────────────────────────────
+  /** How the overall length is determined (FR-WP-01, FR-WP-02) */
+  lengthMode: LengthModeSchema.default('schematic'),
+  /** Length value used when lengthMode = 'override' */
+  overrideLengthMm: z.number().nonnegative().nullable().default(null),
+  /** Formula expression used when lengthMode = 'formula' */
+  formulaExpr: z.string().max(512).nullable().default(null),
+  /** If true, global routing slack % does not apply to this wire (FR-WP-05) */
+  routingSlackOptOut: z.boolean().default(false),
+
+  // ── §6.4.3 Named Segments ────────────────────────────────────────────────
+  /** Ordered named segments; sum should equal overall length (FR-WP-06, FR-WP-07, FR-WP-09) */
+  segments: z.array(WireSegmentSchema).default([]),
+
+  // ── §6.4.4 Strip Definitions ─────────────────────────────────────────────
+  /** End A strip definition (FR-WP-11) */
+  endA: WireEndSchema.default({}),
+  /** End B strip definition (FR-WP-11) */
+  endB: WireEndSchema.default({}),
 });
 export type Wire = z.infer<typeof WireSchema>;
 
@@ -65,6 +91,11 @@ export const CableSchema = z.object({
   id: z.string().uuid(),
   label: z.string().max(128).default(''),
   notes: z.string().max(2000).default(''),
+  /** Cable overall length override in mm (null = derive from longest conductor) */
+  overallLengthMm: z.number().nonnegative().nullable().default(null),
+  /** Per-end jacket/shield fields (FR-WP-15) */
+  endA: CableEndSchema.default({}),
+  endB: CableEndSchema.default({}),
 });
 export type Cable = z.infer<typeof CableSchema>;
 
