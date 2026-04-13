@@ -30,6 +30,7 @@ const KIND_LABELS: Record<SearchResultKind, string> = {
   connector: 'Connector',
   wire: 'Wire',
   cable: 'Cable',
+  bundle: 'Bundle',
   signal: 'Signal',
   protective_span: 'Protective Span',
 };
@@ -38,6 +39,7 @@ const KIND_COLORS: Record<SearchResultKind, string> = {
   connector: '#2563eb',
   wire: '#d97706',
   cable: '#7c3aed',
+  bundle: '#0891b2',
   signal: '#059669',
   protective_span: '#dc2626',
 };

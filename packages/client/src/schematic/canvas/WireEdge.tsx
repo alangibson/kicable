@@ -138,28 +138,41 @@ const WireEdge = memo(function WireEdge({
         />
       ))}
 
-      {/* Edge label */}
-      {displayLabel && (
-        <EdgeLabelRenderer>
-          <div
+      {/* Label + color swatch (FR-WG-02) */}
+      <EdgeLabelRenderer>
+        <div
+          style={{
+            position: 'absolute',
+            transform: `translate(-50%, -50%) translate(${midX}px,${midY}px)`,
+            background: 'rgba(255,255,255,0.9)',
+            border: `1px solid ${color}`,
+            borderRadius: 4,
+            padding: '1px 5px',
+            fontSize: 10,
+            fontFamily: 'sans-serif',
+            color: '#1e293b',
+            pointerEvents: 'none',
+            whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+          }}
+        >
+          {/* Color swatch (FR-WG-02) */}
+          <span
             style={{
-              position: 'absolute',
-              transform: `translate(-50%, -50%) translate(${midX}px,${midY}px)`,
-              background: 'rgba(255,255,255,0.85)',
-              border: `1px solid ${color}`,
-              borderRadius: 4,
-              padding: '1px 5px',
-              fontSize: 10,
-              fontFamily: 'sans-serif',
-              color: '#1e293b',
-              pointerEvents: 'none',
-              whiteSpace: 'nowrap',
+              display: 'inline-block',
+              width: 8,
+              height: 8,
+              borderRadius: 2,
+              background: color,
+              border: '1px solid rgba(0,0,0,0.25)',
+              flexShrink: 0,
             }}
-          >
-            {displayLabel}
-          </div>
-        </EdgeLabelRenderer>
-      )}
+          />
+          {displayLabel && <span>{displayLabel}</span>}
+        </div>
+      </EdgeLabelRenderer>
     </>
   );
 });

@@ -4,3 +4,4 @@ export * from './schematic.js';
 export * from './utils.js';
 export * from './storage.js';
 export * from './builtinLibrary.js';
+export * from './wireColors.js';

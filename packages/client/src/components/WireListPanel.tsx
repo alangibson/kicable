@@ -20,6 +20,7 @@ interface WireRow {
   colorHex: string;
   signalName: string;
   cableLabel: string;
+  bundleLabel: string;
 }
 
 function buildRows(schematic: Schematic): WireRow[] {
@@ -27,11 +28,13 @@ function buildRows(schematic: Schematic): WireRow[] {
     schematic.connectors.map((c) => [c.id, c]),
   );
   const cableMap = new Map(schematic.cables.map((c) => [c.id, c]));
+  const bundleMap = new Map(schematic.bundles.map((b) => [b.id, b]));
 
   return schematic.wires.map((w: Wire) => {
     const fromC = connectorMap.get(w.fromEnd.connectorId);
     const toC = connectorMap.get(w.toEnd.connectorId);
     const cable = w.cableId ? cableMap.get(w.cableId) : null;
+    const bundle = w.bundleId ? bundleMap.get(w.bundleId) : null;
 
     return {
       id: w.id,
@@ -45,6 +48,7 @@ function buildRows(schematic: Schematic): WireRow[] {
       colorHex: w.colorHex,
       signalName: w.signalName || '—',
       cableLabel: cable?.label || '—',
+      bundleLabel: bundle?.label || '—',
     };
   });
 }
@@ -60,7 +64,8 @@ function rowMatchesFilter(row: WireRow, filter: string): boolean {
     row.gauge.toLowerCase().includes(f) ||
     row.colorName.toLowerCase().includes(f) ||
     row.signalName.toLowerCase().includes(f) ||
-    row.cableLabel.toLowerCase().includes(f)
+    row.cableLabel.toLowerCase().includes(f) ||
+    row.bundleLabel.toLowerCase().includes(f)
   );
 }
 
@@ -150,6 +155,7 @@ export const WireListPanel: FC<Props> = ({ schematic, selectedWireId, onSelectWi
                 <th style={{ ...COL_STYLE, color: '#6b7280', fontWeight: 600 }}>Color</th>
                 <th style={{ ...COL_STYLE, color: '#6b7280', fontWeight: 600 }}>Signal</th>
                 <th style={{ ...COL_STYLE, color: '#6b7280', fontWeight: 600 }}>Cable</th>
+                <th style={{ ...COL_STYLE, color: '#6b7280', fontWeight: 600 }}>Bundle</th>
               </tr>
             </thead>
             <tbody>
@@ -191,6 +197,7 @@ export const WireListPanel: FC<Props> = ({ schematic, selectedWireId, onSelectWi
                     </td>
                     <td style={{ ...COL_STYLE, color: '#374151', maxWidth: 120 }}>{row.signalName}</td>
                     <td style={{ ...COL_STYLE, color: '#6b7280' }}>{row.cableLabel}</td>
+                    <td style={{ ...COL_STYLE, color: '#6b7280' }}>{row.bundleLabel}</td>
                   </tr>
                 );
               })}

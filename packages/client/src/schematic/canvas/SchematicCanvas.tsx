@@ -40,11 +40,12 @@ import {
   applyEdgeChanges,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import type { Component, ConnectorInstance, Schematic, SpliceNode, Wire } from '@kicable/shared';
+import type { Cable, Component, ConnectorInstance, Schematic, SpliceNode, Wire } from '@kicable/shared';
 import { makeId } from '@kicable/shared';
 import ConnectorNode, { type ConnectorNodeData } from './ConnectorNode.js';
 import SpliceNodeComponent, { type SpliceNodeData } from './SpliceNodeComponent.js';
 import WireEdge, { type WireEdgeData } from './WireEdge.js';
+import CableEdge, { type CableEdgeData } from './CableEdge.js';
 import type { UseEditorStateReturn } from '../useEditorState.js';
 
 // ---------------------------------------------------------------------------
@@ -78,6 +79,7 @@ const nodeTypes = {
 
 const edgeTypes = {
   wire: WireEdge,
+  cable: CableEdge,
 };
 
 // ---------------------------------------------------------------------------
@@ -121,7 +123,7 @@ function schematicToRFEdges(
   schematic: Schematic,
   onAddWaypoint: (edgeId: string, x: number, y: number) => void,
 ): Edge[] {
-  return schematic.wires.map((w) => ({
+  const wireEdges: Edge[] = schematic.wires.map((w) => ({
     id: w.id,
     type: 'wire',
     source: w.fromEnd.connectorId,
@@ -136,6 +138,29 @@ function schematicToRFEdges(
       onAddWaypoint,
     } satisfies WireEdgeData,
   }));
+
+  // FR-WG-05: render routed cables as thick edges (only when both endpoints set)
+  const cableEdges: Edge[] = schematic.cables
+    .filter((c) => c.fromConnectorId && c.toConnectorId)
+    .map((c) => {
+      const conductorColors = schematic.wires
+        .filter((w) => w.cableId === c.id)
+        .map((w) => w.colorHex);
+      return {
+        id: `cable-${c.id}`,
+        type: 'cable',
+        source: c.fromConnectorId!,
+        target: c.toConnectorId!,
+        zIndex: -1, // render below wire edges
+        data: {
+          label: c.label,
+          conductorColors,
+          waypoints: c.waypoints,
+        } satisfies CableEdgeData,
+      };
+    });
+
+  return [...cableEdges, ...wireEdges];
 }
 
 // ---------------------------------------------------------------------------
@@ -154,6 +179,8 @@ const SchematicCanvas: FC<Props> = ({
     removeConnector,
     upsertWire,
     removeWire,
+    upsertCable,
+    removeCable,
     upsertSplice,
     removeSplice,
     undo,
@@ -263,6 +290,7 @@ const SchematicCanvas: FC<Props> = ({
         signalName: '',
         notes: '',
         cableId: null,
+        bundleId: null,
         waypoints: [],
       };
       upsertWire(newWire);
@@ -336,10 +364,15 @@ const SchematicCanvas: FC<Props> = ({
   const handleEdgesDelete = useCallback(
     (deletedEdges: Edge[]) => {
       for (const e of deletedEdges) {
-        removeWire(e.id);
+        if (e.id.startsWith('cable-')) {
+          // Remove cable entity (strip the 'cable-' prefix to get the cable id)
+          removeCable(e.id.slice(6));
+        } else {
+          removeWire(e.id);
+        }
       }
     },
-    [removeWire],
+    [removeWire, removeCable],
   );
 
   // ── Selection change ──
@@ -436,13 +469,14 @@ const SchematicCanvas: FC<Props> = ({
   const insertSpliceRef = useRef(insertSplice);
   insertSpliceRef.current = insertSplice;
 
-  // ── Also sync schematic mutations back to RF edges when wires change ──
+  // ── Sync schematic mutations back to RF edges when wires or cables change ──
   useEffect(() => {
     setEdges(schematicToRFEdges(schematic, (id, x, y) => addWaypointRef.current(id, x, y)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [schematic.wires, setEdges]);
+  }, [schematic.wires, schematic.cables, setEdges]);
 
   void setSchematic; // available via editor prop if needed
+  void upsertCable; // used in PropertiesPanel; available here for future toolbar use
 
   return (
     <div

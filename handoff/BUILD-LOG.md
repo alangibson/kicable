@@ -14,6 +14,7 @@ Spec: PRD.md
 | 2 | §5 Storage Layer | Done | 2026-04-11 |
 | 3 | §6.2 Schematic Editor | Done | 2026-04-12 |
 | 4 | §6.3 Component Library | Done | 2026-04-12 |
+| 5 | §6.5 Wire & Cable General Properties | Done | 2026-04-13 |
 
 ---
 
@@ -134,6 +135,40 @@ Spec: PRD.md
 - `pnpm --filter @kicable/client typecheck` — no new errors (pre-existing test errors unchanged)
 - `pnpm --filter @kicable/shared test` — 19 tests pass
 - `pnpm --filter @kicable/client test` — 48 tests pass (10 new)
+
+---
+
+---
+
+## Step 5 — §6.5 Wire & Cable General Properties
+
+**Files created:**
+- `packages/shared/src/wireColors.ts` — ISO 6722 + SAE J1128 color palettes, AWG diameter table, `calcBundleDiameter` (FR-WG-02, FR-WG-03)
+- `packages/client/src/schematic/canvas/CableEdge.tsx` — React Flow edge component for routed cables with conductor color stripes (FR-WG-05)
+- `packages/shared/src/__tests__/wireGeneral.test.ts` — 24 tests covering color palettes, diameter calc, signal propagation
+
+**Files modified:**
+- `packages/shared/src/schematic.ts` — `bundleId` on `WireSchema`; `BundleSchema`; routing fields on `CableSchema` (`fromConnectorId`, `toConnectorId`, `waypoints`); `propagateSignalName()`; `bundles` array on `Schematic`; `'bundle'` kind in `SearchResultKind` (FR-WG-03–FR-WG-05)
+- `packages/shared/src/index.ts` — re-export `wireColors`
+- `packages/client/src/schematic/useEditorState.ts` — `upsertBundle`/`removeBundle` mutators; signal propagation in `upsertWire` (FR-WG-03, FR-WG-04)
+- `packages/client/src/schematic/PropertiesPanel.tsx` — gauge selector (AWG/mm²), color standard preset picker, bundle assignment + OD readout, cable assignment (FR-WG-01–FR-WG-03, FR-WG-05)
+- `packages/client/src/schematic/canvas/WireEdge.tsx` — always-visible color swatch dot at edge midpoint (FR-WG-02)
+- `packages/client/src/schematic/canvas/SchematicCanvas.tsx` — `CableEdge` registered; cable edges rendered for routed cables; cable delete handling (FR-WG-05)
+- `packages/client/src/components/WireListPanel.tsx` — Bundle column added (FR-WG-03)
+- `packages/client/src/components/GlobalSearch.tsx` — `'bundle'` kind added to label/color maps
+
+**Decisions:**
+- `BundleSchema` is a separate entity from `CableSchema`: bundles = groupings of individual wires; cables = multi-conductor sheathed cables
+- Signal propagation is one-hop: when a wire's signalName changes, all wires sharing a connector+pin endpoint get the same name immediately
+- Cable edges render with `zIndex: -1` so they appear behind wire edges
+- `CableEdge` shows up to 8 conductor color swatches in its label; extra count is shown as "+N"
+- `calcBundleDiameter` uses IPC-D-317A fill-ratio area method; default fill ratio = 0.6
+
+**Verification:**
+- `npm run build -w @kicable/shared` — clean
+- `npm run typecheck -w @kicable/client` — no new errors (pre-existing test errors unchanged)
+- `npm run test -w @kicable/shared` — 43 tests pass (24 new)
+- `npm run test -w @kicable/client` — 48 tests pass (unchanged)
 
 ---
 

@@ -47,11 +47,13 @@ export const WireSchema = z.object({
   colorHex: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#888888'),
   /** Human-readable color name / abbreviation e.g. "Red", "GN/YE" */
   colorName: z.string().max(64).default(''),
-  /** Named signal carried by this wire */
+  /** Named signal carried by this wire (FR-WG-01) */
   signalName: z.string().max(128).default(''),
   notes: z.string().max(2000).default(''),
-  /** Cable this wire belongs to (null = standalone) */
+  /** Cable this wire belongs to (null = standalone) (FR-WG-05) */
   cableId: z.string().uuid().nullable().default(null),
+  /** Bundle this wire belongs to (null = not bundled) (FR-WG-03) */
+  bundleId: z.string().uuid().nullable().default(null),
   /** Intermediate canvas waypoints */
   waypoints: z.array(z.object({ x: z.number(), y: z.number() })).default([]),
 });
@@ -65,8 +67,27 @@ export const CableSchema = z.object({
   id: z.string().uuid(),
   label: z.string().max(128).default(''),
   notes: z.string().max(2000).default(''),
+  /** Source connector for cable routing (FR-WG-05) */
+  fromConnectorId: z.string().uuid().nullable().default(null),
+  /** Target connector for cable routing (FR-WG-05) */
+  toConnectorId: z.string().uuid().nullable().default(null),
+  /** Intermediate canvas waypoints for cable route (FR-WG-05) */
+  waypoints: z.array(z.object({ x: z.number(), y: z.number() })).default([]),
 });
 export type Cable = z.infer<typeof CableSchema>;
+
+// ---------------------------------------------------------------------------
+// Bundle — group of individual wires bound together (FR-WG-03)
+// ---------------------------------------------------------------------------
+
+export const BundleSchema = z.object({
+  id: z.string().uuid(),
+  label: z.string().max(128).default(''),
+  notes: z.string().max(2000).default(''),
+  /** Fill ratio for outer diameter calculation 0.1–1.0 (default 0.6 per IPC-D-317A) */
+  fillRatio: z.number().min(0.1).max(1).default(0.6),
+});
+export type Bundle = z.infer<typeof BundleSchema>;
 
 // ---------------------------------------------------------------------------
 // Signal — named net that can span multiple wires (FR-WG-04)
@@ -119,6 +140,7 @@ export const SchematicSchema = z.object({
   connectors: z.array(ConnectorInstanceSchema).default([]),
   wires: z.array(WireSchema).default([]),
   cables: z.array(CableSchema).default([]),
+  bundles: z.array(BundleSchema).default([]),
   signals: z.array(SignalSchema).default([]),
   protectiveSpans: z.array(ProtectiveMaterialSpanSchema).default([]),
   spliceNodes: z.array(SpliceNodeSchema).default([]),
@@ -129,10 +151,44 @@ export const EMPTY_SCHEMATIC: Schematic = {
   connectors: [],
   wires: [],
   cables: [],
+  bundles: [],
   signals: [],
   protectiveSpans: [],
   spliceNodes: [],
 };
+
+// ---------------------------------------------------------------------------
+// Signal propagation (FR-WG-04)
+// ---------------------------------------------------------------------------
+
+/**
+ * When a wire's signalName changes, propagate that name to every other wire
+ * that shares a connector+pin endpoint with the changed wire (one-hop).
+ *
+ * @param schematic  Current schematic (changedWire must already be updated in it)
+ * @param changedWire  The wire whose signalName was just set
+ */
+export function propagateSignalName(schematic: Schematic, changedWire: Wire): Schematic {
+  if (!changedWire.signalName) return schematic;
+
+  // Build the set of pin keys touched by the changed wire
+  const touchedPins = new Set([
+    `${changedWire.fromEnd.connectorId}:${changedWire.fromEnd.pinNumber}`,
+    `${changedWire.toEnd.connectorId}:${changedWire.toEnd.pinNumber}`,
+  ]);
+
+  const updatedWires = schematic.wires.map((w: Wire) => {
+    if (w.id === changedWire.id) return w; // already updated
+    const fromKey = `${w.fromEnd.connectorId}:${w.fromEnd.pinNumber}`;
+    const toKey = `${w.toEnd.connectorId}:${w.toEnd.pinNumber}`;
+    if (touchedPins.has(fromKey) || touchedPins.has(toKey)) {
+      return { ...w, signalName: changedWire.signalName };
+    }
+    return w;
+  });
+
+  return { ...schematic, wires: updatedWires };
+}
 
 // ---------------------------------------------------------------------------
 // Search — unified result type for FR-SN-01
@@ -142,6 +198,7 @@ export type SearchResultKind =
   | 'connector'
   | 'wire'
   | 'cable'
+  | 'bundle'
   | 'signal'
   | 'protective_span';
 
@@ -184,6 +241,11 @@ export function searchSchematic(
   for (const c of schematic.cables) {
     if (match(c.id, c.label, c.notes)) {
       results.push({ kind: 'cable', id: c.id, label: c.label || c.id, subtitle: 'Cable' });
+    }
+  }
+  for (const b of schematic.bundles) {
+    if (match(b.id, b.label, b.notes)) {
+      results.push({ kind: 'bundle', id: b.id, label: b.label || b.id, subtitle: 'Bundle' });
     }
   }
   for (const s of schematic.signals) {

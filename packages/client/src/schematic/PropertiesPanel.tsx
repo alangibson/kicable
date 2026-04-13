@@ -4,11 +4,20 @@
  * Shows editable fields for:
  *  - ConnectorInstance (label)
  *  - SpliceNode (label)
- *  - Wire (label, colorHex, colorName, signalName, gauge, notes)
+ *  - Wire (label, gauge, color + standard presets, signalName, notes,
+ *           bundle assignment, cable assignment)
  */
 
-import { useEffect, useState, type ChangeEvent, type FC } from 'react';
-import type { ConnectorInstance, Schematic, SpliceNode, Wire } from '@kicable/shared';
+import { useEffect, useMemo, useState, type ChangeEvent, type FC } from 'react';
+import type { Bundle, Cable, ConnectorInstance, Schematic, SpliceNode, Wire } from '@kicable/shared';
+import {
+  COMMON_AWG_GAUGES,
+  COMMON_MM2_GAUGES,
+  ISO_6722_COLORS,
+  SAE_J1128_COLORS,
+  calcBundleDiameter,
+  makeId,
+} from '@kicable/shared';
 import type { CanvasSelection } from './canvas/SchematicCanvas.js';
 import type { UseEditorStateReturn } from './useEditorState.js';
 
@@ -30,6 +39,12 @@ const inputStyle: React.CSSProperties = {
   marginTop: 2,
 };
 
+const selectStyle: React.CSSProperties = {
+  ...inputStyle,
+  background: '#fff',
+  cursor: 'pointer',
+};
+
 const labelStyle: React.CSSProperties = {
   fontSize: 10,
   fontWeight: 600,
@@ -39,6 +54,12 @@ const labelStyle: React.CSSProperties = {
 };
 
 const fieldStyle: React.CSSProperties = { marginBottom: 10 };
+
+const sectionStyle: React.CSSProperties = {
+  marginTop: 12,
+  paddingTop: 10,
+  borderTop: '1px solid #e2e8f0',
+};
 
 // ── Connector properties ─────────────────────────────────────────────────────
 const ConnectorProps: FC<{
@@ -117,13 +138,19 @@ const SpliceProps: FC<{
 // ── Wire properties ──────────────────────────────────────────────────────────
 const WireProps: FC<{
   wire: Wire;
+  schematic: Schematic;
   editor: UseEditorStateReturn;
-}> = ({ wire, editor }) => {
+}> = ({ wire, schematic, editor }) => {
   const [label, setLabel] = useState(wire.label);
   const [colorHex, setColorHex] = useState(wire.colorHex);
   const [colorName, setColorName] = useState(wire.colorName);
   const [signalName, setSignalName] = useState(wire.signalName);
   const [notes, setNotes] = useState(wire.notes);
+  const [gaugeMode, setGaugeMode] = useState<'none' | 'awg' | 'mm2'>(
+    wire.gaugeAwg != null ? 'awg' : wire.gaugeMm2 != null ? 'mm2' : 'none',
+  );
+  const [gaugeAwg, setGaugeAwg] = useState<number | null>(wire.gaugeAwg);
+  const [gaugeMm2, setGaugeMm2] = useState<number | null>(wire.gaugeMm2);
 
   useEffect(() => {
     setLabel(wire.label);
@@ -131,6 +158,9 @@ const WireProps: FC<{
     setColorName(wire.colorName);
     setSignalName(wire.signalName);
     setNotes(wire.notes);
+    setGaugeMode(wire.gaugeAwg != null ? 'awg' : wire.gaugeMm2 != null ? 'mm2' : 'none');
+    setGaugeAwg(wire.gaugeAwg);
+    setGaugeMm2(wire.gaugeMm2);
   }, [wire]);
 
   function save() {
@@ -141,14 +171,85 @@ const WireProps: FC<{
       colorName,
       signalName,
       notes,
+      gaugeAwg: gaugeMode === 'awg' ? gaugeAwg : null,
+      gaugeMm2: gaugeMode === 'mm2' ? gaugeMm2 : null,
     });
   }
+
+  function applyColorPreset(code: string) {
+    const preset = [...ISO_6722_COLORS, ...SAE_J1128_COLORS].find(
+      (c) => c.code === code,
+    );
+    if (!preset) return;
+    setColorHex(preset.hex);
+    setColorName(preset.name);
+    editor.upsertWire({ ...wire, colorHex: preset.hex, colorName: preset.name });
+  }
+
+  // ── Cable assignment ──
+  function assignCable(cableId: string | null) {
+    editor.upsertWire({ ...wire, label, colorHex, colorName, signalName, notes, cableId });
+  }
+
+  function createCable() {
+    const cable: Cable = {
+      id: makeId<'Cable'>(),
+      label: `Cable ${schematic.cables.length + 1}`,
+      notes: '',
+      fromConnectorId: null,
+      toConnectorId: null,
+      waypoints: [],
+    };
+    editor.upsertCable(cable);
+    editor.upsertWire({ ...wire, label, colorHex, colorName, signalName, notes, cableId: cable.id });
+  }
+
+  // ── Bundle assignment ──
+  function assignBundle(bundleId: string | null) {
+    editor.upsertWire({ ...wire, label, colorHex, colorName, signalName, notes, bundleId });
+  }
+
+  function createBundle() {
+    const bundle: Bundle = {
+      id: makeId<'Bundle'>(),
+      label: `Bundle ${schematic.bundles.length + 1}`,
+      notes: '',
+      fillRatio: 0.6,
+    };
+    editor.upsertBundle(bundle);
+    editor.upsertWire({ ...wire, label, colorHex, colorName, signalName, notes, bundleId: bundle.id });
+  }
+
+  // Bundle outer diameter (if wire is in a bundle)
+  const bundleDiameter = useMemo(() => {
+    if (!wire.bundleId) return null;
+    const bundleWires = schematic.wires.filter((w) => w.bundleId === wire.bundleId);
+    return calcBundleDiameter(bundleWires);
+  }, [wire.bundleId, schematic.wires]);
+
+  const currentBundle = wire.bundleId
+    ? schematic.bundles.find((b) => b.id === wire.bundleId)
+    : null;
+
+  const currentCable = wire.cableId
+    ? schematic.cables.find((c) => c.id === wire.cableId)
+    : null;
 
   return (
     <>
       <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 10, color: '#1e293b' }}>
         Wire
       </div>
+
+      {/* Wire ID (FR-WG-01) */}
+      <div style={{ ...fieldStyle, marginBottom: 6 }}>
+        <div style={labelStyle}>Wire ID</div>
+        <div style={{ fontSize: 10, color: '#94a3b8', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+          {wire.id}
+        </div>
+      </div>
+
+      {/* Label */}
       <div style={fieldStyle}>
         <div style={labelStyle}>Wire label / number</div>
         <input
@@ -160,8 +261,10 @@ const WireProps: FC<{
           placeholder="W1…"
         />
       </div>
+
+      {/* Signal */}
       <div style={fieldStyle}>
-        <div style={labelStyle}>Signal</div>
+        <div style={labelStyle}>Signal (auto-propagates to shared pins)</div>
         <input
           style={inputStyle}
           value={signalName}
@@ -171,6 +274,64 @@ const WireProps: FC<{
           placeholder="GND, VCC…"
         />
       </div>
+
+      {/* Gauge (FR-WG-01) */}
+      <div style={fieldStyle}>
+        <div style={labelStyle}>Gauge</div>
+        <div style={{ display: 'flex', gap: 4, marginTop: 2, marginBottom: 4 }}>
+          {(['none', 'awg', 'mm2'] as const).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => { setGaugeMode(mode); }}
+              style={{
+                padding: '2px 8px',
+                fontSize: 10,
+                border: '1px solid #cbd5e1',
+                borderRadius: 3,
+                cursor: 'pointer',
+                background: gaugeMode === mode ? '#3b82f6' : '#fff',
+                color: gaugeMode === mode ? '#fff' : '#374151',
+              }}
+            >
+              {mode === 'none' ? '—' : mode === 'awg' ? 'AWG' : 'mm²'}
+            </button>
+          ))}
+        </div>
+        {gaugeMode === 'awg' && (
+          <select
+            style={selectStyle}
+            value={gaugeAwg ?? ''}
+            onChange={(e) => {
+              const v = e.target.value === '' ? null : Number(e.target.value);
+              setGaugeAwg(v);
+              editor.upsertWire({ ...wire, gaugeAwg: v, gaugeMm2: null });
+            }}
+          >
+            <option value="">— select AWG —</option>
+            {COMMON_AWG_GAUGES.map((g) => (
+              <option key={g} value={g}>{g} AWG</option>
+            ))}
+          </select>
+        )}
+        {gaugeMode === 'mm2' && (
+          <select
+            style={selectStyle}
+            value={gaugeMm2 ?? ''}
+            onChange={(e) => {
+              const v = e.target.value === '' ? null : Number(e.target.value);
+              setGaugeMm2(v);
+              editor.upsertWire({ ...wire, gaugeMm2: v, gaugeAwg: null });
+            }}
+          >
+            <option value="">— select mm² —</option>
+            {COMMON_MM2_GAUGES.map((g) => (
+              <option key={g} value={g}>{g} mm²</option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      {/* Color (FR-WG-02) */}
       <div style={{ ...fieldStyle, display: 'flex', gap: 6 }}>
         <div style={{ flex: '0 0 36px' }}>
           <div style={labelStyle}>Color</div>
@@ -179,7 +340,14 @@ const WireProps: FC<{
             value={colorHex}
             onChange={(e) => setColorHex(e.target.value)}
             onBlur={save}
-            style={{ width: 36, height: 28, padding: 1, border: '1px solid #cbd5e1', borderRadius: 4, cursor: 'pointer' }}
+            style={{
+              width: 36,
+              height: 28,
+              padding: 1,
+              border: '1px solid #cbd5e1',
+              borderRadius: 4,
+              cursor: 'pointer',
+            }}
             title="Wire color"
           />
         </div>
@@ -195,6 +363,34 @@ const WireProps: FC<{
           />
         </div>
       </div>
+
+      {/* Color standard presets (FR-WG-02) */}
+      <div style={fieldStyle}>
+        <div style={labelStyle}>Standard color preset</div>
+        <select
+          style={selectStyle}
+          value=""
+          onChange={(e) => applyColorPreset(e.target.value)}
+        >
+          <option value="">— ISO 6722 / SAE J1128 —</option>
+          <optgroup label="ISO 6722">
+            {ISO_6722_COLORS.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.code} — {c.name}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="SAE J1128">
+            {SAE_J1128_COLORS.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.code} — {c.name}
+              </option>
+            ))}
+          </optgroup>
+        </select>
+      </div>
+
+      {/* Notes */}
       <div style={fieldStyle}>
         <div style={labelStyle}>Notes</div>
         <textarea
@@ -205,11 +401,107 @@ const WireProps: FC<{
           placeholder="Notes…"
         />
       </div>
+
+      {/* Endpoints */}
       <div style={fieldStyle}>
         <div style={{ fontSize: 10, color: '#94a3b8' }}>
           {wire.fromEnd.connectorId.slice(0, 8)}… pin {wire.fromEnd.pinNumber}
           {' → '}
           {wire.toEnd.connectorId.slice(0, 8)}… pin {wire.toEnd.pinNumber}
+        </div>
+      </div>
+
+      {/* ── Cable assignment (FR-WG-05) ── */}
+      <div style={sectionStyle}>
+        <div style={{ fontWeight: 600, fontSize: 11, color: '#1e293b', marginBottom: 6 }}>
+          Cable
+        </div>
+        <div style={fieldStyle}>
+          <div style={labelStyle}>Assign to cable</div>
+          <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
+            <select
+              style={{ ...selectStyle, flex: 1 }}
+              value={wire.cableId ?? ''}
+              onChange={(e) => assignCable(e.target.value || null)}
+            >
+              <option value="">— none —</option>
+              {schematic.cables.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label || c.id.slice(0, 8)}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={createCable}
+              title="Create new cable and assign"
+              style={{
+                padding: '3px 8px',
+                fontSize: 10,
+                border: '1px solid #cbd5e1',
+                borderRadius: 4,
+                cursor: 'pointer',
+                background: '#f8fafc',
+                flexShrink: 0,
+              }}
+            >
+              + New
+            </button>
+          </div>
+          {currentCable && (
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 3 }}>
+              Cable: {currentCable.label}
+              {currentCable.fromConnectorId && currentCable.toConnectorId && (
+                <> · routed</>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Bundle assignment (FR-WG-03) ── */}
+      <div style={sectionStyle}>
+        <div style={{ fontWeight: 600, fontSize: 11, color: '#1e293b', marginBottom: 6 }}>
+          Bundle
+        </div>
+        <div style={fieldStyle}>
+          <div style={labelStyle}>Assign to bundle</div>
+          <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
+            <select
+              style={{ ...selectStyle, flex: 1 }}
+              value={wire.bundleId ?? ''}
+              onChange={(e) => assignBundle(e.target.value || null)}
+            >
+              <option value="">— none —</option>
+              {schematic.bundles.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.label || b.id.slice(0, 8)}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={createBundle}
+              title="Create new bundle and assign"
+              style={{
+                padding: '3px 8px',
+                fontSize: 10,
+                border: '1px solid #cbd5e1',
+                borderRadius: 4,
+                cursor: 'pointer',
+                background: '#f8fafc',
+                flexShrink: 0,
+              }}
+            >
+              + New
+            </button>
+          </div>
+          {currentBundle && (
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 3 }}>
+              {currentBundle.label} · fill {Math.round(currentBundle.fillRatio * 100)}%
+              {bundleDiameter != null && (
+                <> · OD ≈ {bundleDiameter.toFixed(1)} mm</>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </>
@@ -251,7 +543,7 @@ const PropertiesPanel: FC<Props> = ({ selection, schematic, editor }) => {
 
       {selection?.kind === 'wire' && (() => {
         const w = schematic.wires.find((x) => x.id === selection.id);
-        return w ? <WireProps wire={w} editor={editor} /> : null;
+        return w ? <WireProps wire={w} schematic={schematic} editor={editor} /> : null;
       })()}
     </div>
   );
