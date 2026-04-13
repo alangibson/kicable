@@ -140,6 +140,31 @@ export const WireSegmentSchema = z.object({
 export type WireSegment = z.infer<typeof WireSegmentSchema>;
 
 // ---------------------------------------------------------------------------
+// Cable end fields — per-end jacket/shield info for multi-conductor cables (FR-WP-15)
+// ---------------------------------------------------------------------------
+
+export const ShieldTreatmentSchema = z.enum([
+  'fold_back',
+  'cut_flush',
+  'pigtail',
+  'drain_wire_only',
+  'none',
+]);
+export type ShieldTreatment = z.infer<typeof ShieldTreatmentSchema>;
+
+export const CableEndSchema = z.object({
+  /** Outer jacket strip length (mm) */
+  outerJacketStripLengthMm: z.number().nonnegative().default(0),
+  shieldTreatment: ShieldTreatmentSchema.default('none'),
+  drainWireLengthMm: z.number().nonnegative().nullable().default(null),
+  pigtailLengthMm: z.number().nonnegative().nullable().default(null),
+  /** Distance from end at which tape/heat-shrink begins */
+  tapeShrinkStartMm: z.number().nonnegative().nullable().default(null),
+  tapeShrinkLengthMm: z.number().nonnegative().nullable().default(null),
+});
+export type CableEnd = z.infer<typeof CableEndSchema>;
+
+// ---------------------------------------------------------------------------
 // Project (envelope — contains schematic data)
 // ---------------------------------------------------------------------------
 
