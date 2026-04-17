@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { mmToUnit, unitToMm, formatLength, clamp, nowIso } from '../utils.js';
+import {
+  mmToUnit,
+  unitToMm,
+  formatLength,
+  clamp,
+  nowIso,
+  wireInsulationOdMm,
+  computeBundleOuterDiameterMm,
+} from '../utils.js';
 
 describe('mmToUnit', () => {
   it('returns mm unchanged', () => {
@@ -65,5 +73,62 @@ describe('nowIso', () => {
     const result = nowIso();
     expect(() => new Date(result)).not.toThrow();
     expect(new Date(result).toISOString()).toBe(result);
+  });
+});
+
+describe('wireInsulationOdMm', () => {
+  it('returns OD for known AWG gauge', () => {
+    expect(wireInsulationOdMm({ gaugeAwg: 18, gaugeMm2: null })).toBeCloseTo(1.78, 2);
+  });
+
+  it('returns OD for known mm² gauge', () => {
+    expect(wireInsulationOdMm({ gaugeAwg: null, gaugeMm2: 1.5 })).toBeCloseTo(2.8, 2);
+  });
+
+  it('returns null when no gauge is set', () => {
+    expect(wireInsulationOdMm({ gaugeAwg: null, gaugeMm2: null })).toBeNull();
+  });
+
+  it('returns null for an unknown AWG value', () => {
+    expect(wireInsulationOdMm({ gaugeAwg: 99, gaugeMm2: null })).toBeNull();
+  });
+
+  it('AWG takes precedence over mm² when both set', () => {
+    expect(wireInsulationOdMm({ gaugeAwg: 20, gaugeMm2: 1.5 })).toBeCloseTo(1.52, 2);
+  });
+});
+
+describe('computeBundleOuterDiameterMm', () => {
+  it('returns null for an empty array', () => {
+    expect(computeBundleOuterDiameterMm([], 0.6)).toBeNull();
+  });
+
+  it('returns null when fillRatio is zero', () => {
+    expect(computeBundleOuterDiameterMm([2.0, 2.0], 0)).toBeNull();
+  });
+
+  it('single wire: diameter = od / sqrt(fillRatio)', () => {
+    const od = 2.0;
+    const fill = 0.6;
+    const expected = Math.sqrt((od * od) / fill);
+    expect(computeBundleOuterDiameterMm([od], fill)).toBeCloseTo(expected, 5);
+  });
+
+  it('two equal wires: diameter grows vs single wire', () => {
+    const single = computeBundleOuterDiameterMm([2.0], 0.6)!;
+    const dual = computeBundleOuterDiameterMm([2.0, 2.0], 0.6)!;
+    expect(dual).toBeGreaterThan(single);
+  });
+
+  it('higher fill ratio produces smaller bundle', () => {
+    const loose = computeBundleOuterDiameterMm([2.0, 2.0], 0.4)!;
+    const tight = computeBundleOuterDiameterMm([2.0, 2.0], 0.8)!;
+    expect(tight).toBeLessThan(loose);
+  });
+
+  it('skips zero-OD wires', () => {
+    const result = computeBundleOuterDiameterMm([2.0, 0, 2.0], 0.6)!;
+    const expected = computeBundleOuterDiameterMm([2.0, 2.0], 0.6)!;
+    expect(result).toBeCloseTo(expected, 5);
   });
 });

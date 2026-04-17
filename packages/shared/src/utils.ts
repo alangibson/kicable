@@ -57,6 +57,80 @@ export async function isStorageNearQuota(thresholdPct = 80): Promise<boolean> {
 /** Maximum image file size in bytes (20 MB — FR-CL-07) */
 export const MAX_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 
+// ---------------------------------------------------------------------------
+// §6.5 — Wire insulation OD lookup tables (FR-WG-03)
+//
+// Outer diameters are approximate nominal values for PVC/XLPE insulated
+// automotive wire (single conductor).  Values in millimetres.
+// ---------------------------------------------------------------------------
+
+/** Insulation OD (mm) keyed by AWG size. */
+export const AWG_INSULATION_OD_MM: Record<number, number> = {
+  8:  4.57,
+  10: 3.71,
+  12: 3.07,
+  14: 2.54,
+  16: 2.13,
+  18: 1.78,
+  20: 1.52,
+  22: 1.27,
+  24: 1.09,
+  26: 0.97,
+};
+
+/** Insulation OD (mm) keyed by cross-sectional area in mm². */
+export const MM2_INSULATION_OD_MM: Record<number, number> = {
+  0.35: 2.0,
+  0.5:  2.1,
+  0.75: 2.3,
+  1.0:  2.5,
+  1.5:  2.8,
+  2.5:  3.5,
+  4.0:  4.2,
+  6.0:  5.2,
+  10.0: 6.5,
+  16.0: 8.2,
+};
+
+/**
+ * Return the nominal insulation OD for a wire given its gauge.
+ *
+ * Looks up the AWG table when `gaugeAwg` is set, the mm² table when
+ * `gaugeMm2` is set.  Returns null when neither gauge is specified or
+ * when the exact value is not in the lookup table.
+ */
+export function wireInsulationOdMm(wire: {
+  gaugeAwg: number | null;
+  gaugeMm2: number | null;
+}): number | null {
+  if (wire.gaugeAwg != null) return AWG_INSULATION_OD_MM[wire.gaugeAwg] ?? null;
+  if (wire.gaugeMm2 != null) return MM2_INSULATION_OD_MM[wire.gaugeMm2] ?? null;
+  return null;
+}
+
+/**
+ * Compute the outer diameter of a bundle of wires using the fill-ratio
+ * method (FR-WG-03).
+ *
+ * Formula (derived from circular cross-section area):
+ *   D_bundle = sqrt( Σ(od_i²) / fillRatio )
+ *
+ * Wires without a known OD are skipped.  Returns null when the bundle is
+ * empty or no OD data is available.
+ *
+ * @param wireOds   Array of per-wire insulation OD values in mm.
+ * @param fillRatio Fraction of bundle cross-section occupied by wire (0–1).
+ */
+export function computeBundleOuterDiameterMm(
+  wireOds: number[],
+  fillRatio: number,
+): number | null {
+  const valid = wireOds.filter((d) => d > 0);
+  if (valid.length === 0 || fillRatio <= 0) return null;
+  const sumSq = valid.reduce((acc, d) => acc + d * d, 0);
+  return Math.sqrt(sumSq / fillRatio);
+}
+
 /** STEP file size threshold that triggers a user warning in G1 (50 MB — FR-CL-16) */
 export const STEP_FILE_WARN_THRESHOLD_BYTES = 50 * 1024 * 1024;
 

@@ -333,7 +333,8 @@ Each wire or inner conductor of a cable has **two ends** (End A and End B), each
 **FR-WG-02** Wire color follows a user-selectable standard (ISO 6722, SAE J1128, or custom). Color is shown as a swatch on the canvas edge.  
 **FR-WG-03** Wires can be grouped into bundles; bundle outer diameter is calculated automatically from constituent wire gauges and fill ratio.  
 **FR-WG-04** Signal names can be auto-propagated to matching pins across the schematic.  
-**FR-WG-05** Cables are defined in the component library and placed as a single routed entity on the canvas. Their inner conductors inherit the cable's routed path but have individual signal names, colors, and strip definitions.
+**FR-WG-05** Cables are defined in the component library and placed as a single routed entity on the canvas. Their inner conductors inherit the cable's routed path but have individual signal names, colors, and strip definitions. On the canvas the cable is rendered in a WYSIWYG style: the individual conductor edges are drawn as parallel coloured lines enclosed within a thicker cable-jacket outline, so the visual appearance reflects the actual bundled construction of the cable.
+**FR-WG-06** The user can set the outer jacket strip-back length (mm) for End A and End B of a cable independently via the Properties Panel (stored in `CableEnd.outerJacketStripLengthMm`, FR-WP-15). This is distinct from inner-conductor insulation stripping. The stripped length is annotated on the canvas at each cable end.
 
 ### 6.6 Cable Split & Join Operations
 

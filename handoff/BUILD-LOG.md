@@ -14,6 +14,7 @@ Spec: PRD.md
 | 2 | §5 Storage Layer | Done | 2026-04-11 |
 | 3 | §6.2 Schematic Editor | Done | 2026-04-12 |
 | 4 | §6.3 Component Library | Done | 2026-04-12 |
+| 5 | §6.5 Wire & Cable General Properties | Done | 2026-04-13 |
 
 ---
 
@@ -134,6 +135,44 @@ Spec: PRD.md
 - `pnpm --filter @kicable/client typecheck` — no new errors (pre-existing test errors unchanged)
 - `pnpm --filter @kicable/shared test` — 19 tests pass
 - `pnpm --filter @kicable/client test` — 48 tests pass (10 new)
+
+---
+
+---
+
+## Step 5 — §6.5 Wire & Cable General Properties
+
+**Files created:**
+- `packages/shared/src/wireColors.ts` — ISO 6722 and SAE J1128 color standard definitions with lookup helpers (FR-WG-02)
+- `packages/shared/src/__tests__/wireColors.test.ts` — 14 tests covering color standard data and lookup helpers
+
+**Files modified:**
+- `packages/shared/src/schematic.ts` — added `BundleSchema`/`Bundle` type; added `bundleId` to `WireSchema`; added `bundles` array to `SchematicSchema` and `EMPTY_SCHEMATIC` (FR-WG-03)
+- `packages/shared/src/utils.ts` — added `AWG_INSULATION_OD_MM`, `MM2_INSULATION_OD_MM` lookup tables, `wireInsulationOdMm()`, and `computeBundleOuterDiameterMm()` (FR-WG-03)
+- `packages/shared/src/index.ts` — re-exports `wireColors`
+- `packages/shared/src/__tests__/utils.test.ts` — added 11 tests for `wireInsulationOdMm` and `computeBundleOuterDiameterMm`
+- `packages/client/src/schematic/useEditorState.ts` — added `upsertBundle`/`removeBundle` mutators and `Bundle` import
+- `packages/client/src/schematic/PropertiesPanel.tsx` — added: gauge selector (AWG/mm²), color standard picker, color swatch from standard, bundle assignment dropdown, signal-propagate button (↗), `CableProps` component showing conductors, `BundleProps` component with OD readout, bundle/cable management sections in main panel
+- `packages/client/src/schematic/canvas/SchematicCanvas.tsx` — added `bundleId: null` to new wire creation
+- `packages/client/src/schematic/canvas/WireEdge.tsx` — added explicit color swatch square in edge label (FR-WG-02)
+- `packages/client/src/schematic/canvas/CableJacketEdge.tsx` (new) — opaque cable jacket edge with FAN_OUT_PX=32 inset, scaled stroke width, strip-back annotations (FR-WG-05, FR-WG-06)
+- `packages/client/src/schematic/canvas/SchematicCanvas.tsx` — added `CableJacketEdge` to `edgeTypes`; `schematicToRFEdges` builds jacket edges from cableMap and returns `[...wireEdges, ...jacketEdges]` so jacket renders on top (FR-WG-05)
+- `TODO/6.5-wire-general.md` — all items checked
+
+**Decisions:**
+- Bundle OD formula: `D = sqrt(Σ(od_i²) / fillRatio)` — standard fill-ratio area method; default fill ratio 0.6 (60% typical automotive)
+- Bundles and cables are not canvas entities; managed via Properties panel list sections to avoid cluttering canvas
+- Signal propagation (FR-WG-04) implemented as a one-shot ↗ button that copies signal name to all wires sharing the same prior signal name
+- Color standard picker switches between standard dropdown (ISO 6722 / SAE J1128) and freeform hex+name inputs (custom)
+- `bundleId` defaults to null so existing schematics round-trip without migration
+- Cable jacket is opaque (opacity=1); FAN_OUT_PX=32 insets the jacket from each connector so per-conductor color stubs remain visible at fan-out ends; jacket renders after wire edges so it sits on top
+
+**Verification:**
+- `npm run build -w @kicable/shared` — clean
+- `npm run test -w @kicable/shared` — 69 tests pass (14 new)
+- `npm run test -w @kicable/client` — 48 tests pass (unchanged count, no regressions)
+- `npm run typecheck -w @kicable/client` — no new errors (pre-existing test errors unchanged)
+- All tests after jacket edge fix: 117 total (69 shared + 48 client), all pass
 
 ---
 

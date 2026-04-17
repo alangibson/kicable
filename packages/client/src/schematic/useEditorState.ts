@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   EMPTY_SCHEMATIC,
   SchematicSchema,
+  type Bundle,
   type Cable,
   type ConnectorInstance,
   type Project,
@@ -38,6 +39,8 @@ export interface UseEditorStateReturn {
   removeWire: (id: string) => void;
   upsertCable: (c: Cable) => void;
   removeCable: (id: string) => void;
+  upsertBundle: (b: Bundle) => void;
+  removeBundle: (id: string) => void;
   upsertSignal: (s: Signal) => void;
   removeSignal: (id: string) => void;
   upsertSpan: (p: ProtectiveMaterialSpan) => void;
@@ -223,6 +226,15 @@ export function useEditorState(
     [schematic, commit],
   );
 
+  const upsertBundle = useCallback(
+    (b: Bundle) => commit({ ...schematic, bundles: upsertIn(schematic.bundles, b) }),
+    [schematic, commit],
+  );
+  const removeBundle = useCallback(
+    (id: string) => commit({ ...schematic, bundles: removeFrom(schematic.bundles, id) }),
+    [schematic, commit],
+  );
+
   const upsertSignal = useCallback(
     (s: Signal) => commit({ ...schematic, signals: upsertIn(schematic.signals, s) }),
     [schematic, commit],
@@ -266,6 +278,8 @@ export function useEditorState(
     removeWire,
     upsertCable,
     removeCable,
+    upsertBundle,
+    removeBundle,
     upsertSignal,
     removeSignal,
     upsertSpan,

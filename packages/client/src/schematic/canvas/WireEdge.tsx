@@ -138,7 +138,7 @@ const WireEdge = memo(function WireEdge({
         />
       ))}
 
-      {/* Edge label */}
+      {/* Edge label with color swatch (FR-WG-02) */}
       {displayLabel && (
         <EdgeLabelRenderer>
           <div
@@ -154,8 +154,22 @@ const WireEdge = memo(function WireEdge({
               color: '#1e293b',
               pointerEvents: 'none',
               whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
             }}
           >
+            <span
+              style={{
+                display: 'inline-block',
+                width: 8,
+                height: 8,
+                borderRadius: 2,
+                background: color,
+                border: '1px solid rgba(0,0,0,0.15)',
+                flexShrink: 0,
+              }}
+            />
             {displayLabel}
           </div>
         </EdgeLabelRenderer>

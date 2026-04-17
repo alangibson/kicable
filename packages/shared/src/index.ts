@@ -5,3 +5,4 @@ export * from './utils.js';
 export * from './storage.js';
 export * from './builtinLibrary.js';
 export * from './drc.js';
+export * from './wireColors.js';

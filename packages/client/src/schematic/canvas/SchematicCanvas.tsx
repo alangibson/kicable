@@ -45,6 +45,8 @@ import { makeId } from '@kicable/shared';
 import ConnectorNode, { type ConnectorNodeData } from './ConnectorNode.js';
 import SpliceNodeComponent, { type SpliceNodeData } from './SpliceNodeComponent.js';
 import WireEdge, { type WireEdgeData } from './WireEdge.js';
+import CableJacketEdge, { type CableJacketEdgeData } from './CableJacketEdge.js';
+import ConductorStubEdge, { type ConductorStubEdgeData } from './ConductorStubEdge.js';
 import type { UseEditorStateReturn } from '../useEditorState.js';
 
 // ---------------------------------------------------------------------------
@@ -78,6 +80,8 @@ const nodeTypes = {
 
 const edgeTypes = {
   wire: WireEdge,
+  cableJacket: CableJacketEdge,
+  conductorStub: ConductorStubEdge,
 };
 
 // ---------------------------------------------------------------------------
@@ -121,21 +125,72 @@ function schematicToRFEdges(
   schematic: Schematic,
   onAddWaypoint: (edgeId: string, x: number, y: number) => void,
 ): Edge[] {
-  return schematic.wires.map((w) => ({
-    id: w.id,
-    type: 'wire',
-    source: w.fromEnd.connectorId,
-    sourceHandle: `pin-${w.fromEnd.pinNumber}-left`,
-    target: w.toEnd.connectorId,
-    targetHandle: `pin-${w.toEnd.pinNumber}-right`,
-    data: {
-      label: w.label,
-      colorHex: w.colorHex,
-      signalName: w.signalName,
-      waypoints: w.waypoints,
-      onAddWaypoint,
-    } satisfies WireEdgeData,
-  }));
+  // Build cable metadata map: cableId → { cable, conductors[] }
+  const cableMap = new Map(
+    schematic.cables.map((c) => [c.id, { cable: c, conductors: [] as typeof schematic.wires }]),
+  );
+  for (const w of schematic.wires) {
+    if (w.cableId) cableMap.get(w.cableId)?.conductors.push(w);
+  }
+
+  // Jacket edges — one per cable with at least one conductor, prepended so they
+  // render behind the wire edges (React Flow renders edges in array order)
+  const jacketEdges: Edge[] = [];
+  for (const { cable, conductors } of cableMap.values()) {
+    if (conductors.length === 0) continue;
+    const rep = conductors[0]!; // representative conductor for source/target
+    jacketEdges.push({
+      id: `cable-jacket-${cable.id}`,
+      type: 'cableJacket',
+      source: rep.fromEnd.connectorId,
+      sourceHandle: `pin-${rep.fromEnd.pinNumber}-left`,
+      target: rep.toEnd.connectorId,
+      targetHandle: `pin-${rep.toEnd.pinNumber}-right`,
+      selectable: false,
+      data: {
+        conductorCount: conductors.length,
+        jacketColorHex: '#64748b',
+        cableLabel: cable.label,
+        endAStripMm: cable.endA.outerJacketStripLengthMm,
+        endBStripMm: cable.endB.outerJacketStripLengthMm,
+      } satisfies CableJacketEdgeData,
+    });
+  }
+
+  const wireEdges: Edge[] = schematic.wires.map((w) => {
+    if (w.cableId) {
+      return {
+        id: w.id,
+        type: 'conductorStub',
+        source: w.fromEnd.connectorId,
+        sourceHandle: `pin-${w.fromEnd.pinNumber}-left`,
+        target: w.toEnd.connectorId,
+        targetHandle: `pin-${w.toEnd.pinNumber}-right`,
+        data: {
+          colorHex: w.colorHex,
+          label: w.label,
+          signalName: w.signalName,
+        } satisfies ConductorStubEdgeData,
+      };
+    }
+    return {
+      id: w.id,
+      type: 'wire',
+      source: w.fromEnd.connectorId,
+      sourceHandle: `pin-${w.fromEnd.pinNumber}-left`,
+      target: w.toEnd.connectorId,
+      targetHandle: `pin-${w.toEnd.pinNumber}-right`,
+      data: {
+        label: w.label,
+        colorHex: w.colorHex,
+        signalName: w.signalName,
+        waypoints: w.waypoints,
+        onAddWaypoint,
+      } satisfies WireEdgeData,
+    };
+  });
+
+  return [...wireEdges, ...jacketEdges];
 }
 
 // ---------------------------------------------------------------------------
@@ -263,6 +318,7 @@ const SchematicCanvas: FC<Props> = ({
         signalName: '',
         notes: '',
         cableId: null,
+        bundleId: null,
         waypoints: [],
         lengthMode: 'schematic',
         overrideLengthMm: null,

@@ -58,6 +58,8 @@ export const WireSchema = z.object({
   notes: z.string().max(2000).default(''),
   /** Cable this wire belongs to (null = standalone) */
   cableId: z.string().uuid().nullable().default(null),
+  /** Bundle this wire belongs to (null = not bundled) */
+  bundleId: z.string().uuid().nullable().default(null),
   /** Intermediate canvas waypoints */
   waypoints: z.array(z.object({ x: z.number(), y: z.number() })).default([]),
 
@@ -98,6 +100,22 @@ export const CableSchema = z.object({
   endB: CableEndSchema.default({}),
 });
 export type Cable = z.infer<typeof CableSchema>;
+
+// ---------------------------------------------------------------------------
+// Bundle — group of wires with auto-calculated outer diameter (FR-WG-03)
+// ---------------------------------------------------------------------------
+
+export const BundleSchema = z.object({
+  id: z.string().uuid(),
+  label: z.string().max(128).default(''),
+  notes: z.string().max(2000).default(''),
+  /**
+   * Fill ratio (0–1): fraction of bundle cross-section occupied by wire.
+   * Typical automotive value is 0.6 (60%).
+   */
+  fillRatio: z.number().min(0.01).max(1).default(0.6),
+});
+export type Bundle = z.infer<typeof BundleSchema>;
 
 // ---------------------------------------------------------------------------
 // Signal — named net that can span multiple wires (FR-WG-04)
@@ -150,6 +168,7 @@ export const SchematicSchema = z.object({
   connectors: z.array(ConnectorInstanceSchema).default([]),
   wires: z.array(WireSchema).default([]),
   cables: z.array(CableSchema).default([]),
+  bundles: z.array(BundleSchema).default([]),
   signals: z.array(SignalSchema).default([]),
   protectiveSpans: z.array(ProtectiveMaterialSpanSchema).default([]),
   spliceNodes: z.array(SpliceNodeSchema).default([]),
@@ -160,6 +179,7 @@ export const EMPTY_SCHEMATIC: Schematic = {
   connectors: [],
   wires: [],
   cables: [],
+  bundles: [],
   signals: [],
   protectiveSpans: [],
   spliceNodes: [],
