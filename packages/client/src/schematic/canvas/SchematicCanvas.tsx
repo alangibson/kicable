@@ -18,8 +18,10 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type DragEvent,
   type FC,
+  type MouseEvent,
 } from 'react';
 import {
   ReactFlow,
@@ -40,10 +42,12 @@ import {
   applyEdgeChanges,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import type { Component, ConnectorInstance, Schematic, SpliceNode, Wire } from '@kicable/shared';
+import type { Cable, Component, ConnectorInstance, JoinNode, Schematic, SpliceNode, SplitNode, Wire } from '@kicable/shared';
 import { makeId } from '@kicable/shared';
 import ConnectorNode, { type ConnectorNodeData } from './ConnectorNode.js';
 import SpliceNodeComponent, { type SpliceNodeData } from './SpliceNodeComponent.js';
+import SplitNodeComponent, { type SplitNodeData } from './SplitNodeComponent.js';
+import JoinNodeComponent, { type JoinNodeData } from './JoinNodeComponent.js';
 import WireEdge, { type WireEdgeData } from './WireEdge.js';
 import CableJacketEdge, { type CableJacketEdgeData } from './CableJacketEdge.js';
 import ConductorStubEdge, { type ConductorStubEdgeData } from './ConductorStubEdge.js';
@@ -57,6 +61,9 @@ export type CanvasSelection =
   | { kind: 'connector'; id: string }
   | { kind: 'splice'; id: string }
   | { kind: 'wire'; id: string }
+  | { kind: 'wires'; ids: string[] }
+  | { kind: 'splitNode'; id: string }
+  | { kind: 'joinNode'; id: string }
   | null;
 
 interface Props {
@@ -76,6 +83,8 @@ interface Props {
 const nodeTypes = {
   connector: ConnectorNode,
   splice: SpliceNodeComponent,
+  splitNode: SplitNodeComponent,
+  joinNode: JoinNodeComponent,
 };
 
 const edgeTypes = {
@@ -118,7 +127,43 @@ function schematicToRFNodes(
     } satisfies SpliceNodeData,
   }));
 
-  return [...connectorNodes, ...spliceNodes];
+  const splitNodes: Node[] = schematic.splitNodes.map((sn) => {
+    const conductorCount = Math.max(
+      schematic.wires.filter((w) => w.toEnd.connectorId === sn.id).length,
+      schematic.wires.filter((w) => w.fromEnd.connectorId === sn.id).length,
+      1,
+    );
+    return {
+      id: sn.id,
+      type: 'splitNode',
+      position: { x: sn.x, y: sn.y },
+      data: {
+        label: sn.label,
+        conductorCount,
+        fanOutLengthMm: sn.fanOutLengthMm,
+      } satisfies SplitNodeData,
+    };
+  });
+
+  const joinNodes: Node[] = schematic.joinNodes.map((jn) => {
+    const conductorCount = Math.max(
+      schematic.wires.filter((w) => w.toEnd.connectorId === jn.id).length,
+      schematic.wires.filter((w) => w.fromEnd.connectorId === jn.id).length,
+      1,
+    );
+    return {
+      id: jn.id,
+      type: 'joinNode',
+      position: { x: jn.x, y: jn.y },
+      data: {
+        label: jn.label,
+        conductorCount,
+        fanInLengthMm: jn.fanInLengthMm,
+      } satisfies JoinNodeData,
+    };
+  });
+
+  return [...connectorNodes, ...spliceNodes, ...splitNodes, ...joinNodes];
 }
 
 function schematicToRFEdges(
@@ -146,7 +191,7 @@ function schematicToRFEdges(
       sourceHandle: `pin-${rep.fromEnd.pinNumber}-left`,
       target: rep.toEnd.connectorId,
       targetHandle: `pin-${rep.toEnd.pinNumber}-right`,
-      selectable: false,
+      focusable: false,
       data: {
         conductorCount: conductors.length,
         jacketColorHex: '#64748b',
@@ -211,12 +256,29 @@ const SchematicCanvas: FC<Props> = ({
     removeWire,
     upsertSplice,
     removeSplice,
+    upsertSplitNode,
+    removeSplitNode,
+    upsertJoinNode,
+    removeJoinNode,
+    commitSchematic,
     undo,
     redo,
     canUndo,
     canRedo,
     setSchematic,
   } = editor;
+
+  // Context menu state for cable right-click → Split (FR-CS-01)
+  const [cableContextMenu, setCableContextMenu] = useState<{
+    x: number;
+    y: number;
+    canvasX: number;
+    canvasY: number;
+    cableId: string;
+  } | null>(null);
+
+  // Multi-wire selection for Join (FR-CJ-01)
+  const [selectedWireIds, setSelectedWireIds] = useState<string[]>([]);
 
   // ── Waypoint add callback (stable ref so it doesn't rebuild edges constantly) ──
   const addWaypointRef = useRef<(edgeId: string, x: number, y: number) => void>(
@@ -279,11 +341,21 @@ const SchematicCanvas: FC<Props> = ({
           const splice = schematic.spliceNodes.find((s) => s.id === id);
           if (splice) {
             upsertSplice({ ...splice, x: position.x, y: position.y });
+            continue;
+          }
+          const splitNode = schematic.splitNodes.find((s) => s.id === id);
+          if (splitNode) {
+            upsertSplitNode({ ...splitNode, x: position.x, y: position.y });
+            continue;
+          }
+          const joinNode = schematic.joinNodes.find((j) => j.id === id);
+          if (joinNode) {
+            upsertJoinNode({ ...joinNode, x: position.x, y: position.y });
           }
         }
       }
     },
-    [setNodes, schematic, upsertConnector, upsertSplice],
+    [setNodes, schematic, upsertConnector, upsertSplice, upsertSplitNode, upsertJoinNode],
   );
 
   // ── Edge changes ──
@@ -412,10 +484,44 @@ const SchematicCanvas: FC<Props> = ({
           removeConnector(n.id);
         } else if (schematic.spliceNodes.some((s) => s.id === n.id)) {
           removeSplice(n.id);
+        } else if (schematic.splitNodes.some((s) => s.id === n.id)) {
+          // Dissolve split: restore conductor wires' toEnds from matching fan-out wires (FR-CS-07 leave-standalone path)
+          const splitNode = schematic.splitNodes.find((s) => s.id === n.id)!;
+          const conductors = schematic.wires.filter((w) => w.toEnd.connectorId === splitNode.id);
+          const fanOuts = schematic.wires.filter((w) => w.fromEnd.connectorId === splitNode.id);
+          const restoredConductors = conductors.map((c) => {
+            const matching = fanOuts.find((f) => f.fromEnd.pinNumber === c.toEnd.pinNumber);
+            return matching ? { ...c, toEnd: matching.toEnd } : c;
+          });
+          const nextSchematic = {
+            ...schematic,
+            splitNodes: schematic.splitNodes.filter((s) => s.id !== splitNode.id),
+            wires: [
+              ...schematic.wires.filter(
+                (w) => w.toEnd.connectorId !== splitNode.id && w.fromEnd.connectorId !== splitNode.id,
+              ),
+              ...restoredConductors,
+            ],
+          };
+          commitSchematic(nextSchematic);
+        } else if (schematic.joinNodes.some((j) => j.id === n.id)) {
+          // Dissolve join: remove join node and all connected wires, remove associated cable
+          const joinNode = schematic.joinNodes.find((j) => j.id === n.id)!;
+          const nextSchematic = {
+            ...schematic,
+            joinNodes: schematic.joinNodes.filter((j) => j.id !== joinNode.id),
+            cables: joinNode.cableId
+              ? schematic.cables.filter((c) => c.id !== joinNode.cableId)
+              : schematic.cables,
+            wires: schematic.wires.filter(
+              (w) => w.toEnd.connectorId !== joinNode.id && w.fromEnd.connectorId !== joinNode.id,
+            ),
+          };
+          commitSchematic(nextSchematic);
         }
       }
     },
-    [schematic, removeConnector, removeSplice],
+    [schematic, removeConnector, removeSplice, removeSplitNode, removeJoinNode, commitSchematic],
   );
 
   const handleEdgesDelete = useCallback(
@@ -432,16 +538,28 @@ const SchematicCanvas: FC<Props> = ({
     ({ nodes: selNodes, edges: selEdges }: { nodes: Node[]; edges: Edge[] }) => {
       if (selNodes.length === 1 && selEdges.length === 0) {
         const n = selNodes[0]!;
+        setSelectedWireIds([]);
         if (n.type === 'connector') onSelectionChange({ kind: 'connector', id: n.id });
         else if (n.type === 'splice') onSelectionChange({ kind: 'splice', id: n.id });
+        else if (n.type === 'splitNode') onSelectionChange({ kind: 'splitNode', id: n.id });
+        else if (n.type === 'joinNode') onSelectionChange({ kind: 'joinNode', id: n.id });
         else onSelectionChange(null);
+      } else if (selEdges.length >= 2 && selNodes.length === 0) {
+        // Multi-wire selection — track for Join operation
+        const wireIds = selEdges
+          .map((e) => e.id)
+          .filter((id) => schematic.wires.some((w) => w.id === id));
+        setSelectedWireIds(wireIds);
+        onSelectionChange({ kind: 'wires', ids: wireIds });
       } else if (selEdges.length === 1 && selNodes.length === 0) {
+        setSelectedWireIds([]);
         onSelectionChange({ kind: 'wire', id: selEdges[0]!.id });
       } else {
+        setSelectedWireIds([]);
         onSelectionChange(null);
       }
     },
-    [onSelectionChange],
+    [onSelectionChange, schematic.wires],
   );
 
   // ── Drop connector from library panel — FR-SE-02 ──
@@ -494,6 +612,153 @@ const SchematicCanvas: FC<Props> = ({
     e.dataTransfer.dropEffect = 'copy';
   }, []);
 
+  // ── Cable right-click → Split cable here (FR-CS-01) ──
+  // ── Ref to the canvas container for screen-to-canvas coordinate mapping ──
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleEdgeContextMenu = useCallback(
+    (e: MouseEvent, edge: Edge) => {
+      // Only handle cable jacket edges
+      if (!edge.id.startsWith('cable-jacket-')) return;
+      e.preventDefault();
+      const cableId = edge.id.replace('cable-jacket-', '');
+      // Use the canvas container bounds (not the edge SVG element) for correct coordinates
+      const canvasBounds = canvasContainerRef.current?.getBoundingClientRect();
+      setCableContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        // Store screen coords; split position is computed from connector midpoint, not click pos
+        canvasX: canvasBounds ? e.clientX - canvasBounds.left : e.clientX,
+        canvasY: canvasBounds ? e.clientY - canvasBounds.top : e.clientY,
+        cableId,
+      });
+    },
+    [],
+  );
+
+  // ── Perform cable split (FR-CS-02) ──
+  const handleSplitCable = useCallback(
+    (cableId: string) => {
+      setCableContextMenu(null);
+      const conductors = schematic.wires.filter((w) => w.cableId === cableId);
+      if (conductors.length === 0) return;
+
+      // Position split node at midpoint between the representative conductor's endpoints
+      const rep = conductors[0]!;
+      const srcConnector = schematic.connectors.find((c) => c.id === rep.fromEnd.connectorId)
+        ?? schematic.splitNodes.find((s) => s.id === rep.fromEnd.connectorId)
+        ?? schematic.joinNodes.find((j) => j.id === rep.fromEnd.connectorId);
+      const tgtConnector = schematic.connectors.find((c) => c.id === rep.toEnd.connectorId)
+        ?? schematic.splitNodes.find((s) => s.id === rep.toEnd.connectorId)
+        ?? schematic.joinNodes.find((j) => j.id === rep.toEnd.connectorId);
+
+      const splitX = srcConnector && tgtConnector
+        ? (srcConnector.x + tgtConnector.x) / 2
+        : 300;
+      const splitY = srcConnector && tgtConnector
+        ? (srcConnector.y + tgtConnector.y) / 2
+        : 300;
+
+      const splitNode: SplitNode = {
+        id: makeId<'SplitNode'>(),
+        x: splitX,
+        y: splitY,
+        label: '',
+        cableId,
+        fanOutLengthMm: 0,
+      };
+
+      const updatedConductors: Wire[] = [];
+      const fanOutWires: Wire[] = [];
+      conductors.forEach((conductor, i) => {
+        const pinNumber = i + 1;
+        const originalToEnd = conductor.toEnd;
+        updatedConductors.push({ ...conductor, toEnd: { connectorId: splitNode.id, pinNumber } });
+        fanOutWires.push({
+          ...conductor,
+          id: makeId<'Wire'>(),
+          cableId: null,
+          fromEnd: { connectorId: splitNode.id, pinNumber },
+          toEnd: originalToEnd,
+          // Fan-out gets its own strip defs (FR-CS-05); reset endB to defaults
+          endB: { label: '', stripLengthMm: 0, stripType: 'full', insulationOdMm: null, tinningRequired: false, tinningLengthMm: null, terminalComponentId: null, terminalInsertionDepthMm: null, notes: '', stepLayers: [] },
+        });
+      });
+
+      const conductorIds = new Set(conductors.map((c) => c.id));
+      commitSchematic({
+        ...schematic,
+        splitNodes: [...schematic.splitNodes, splitNode],
+        wires: [
+          ...schematic.wires.filter((w) => !conductorIds.has(w.id)),
+          ...updatedConductors,
+          ...fanOutWires,
+        ],
+      });
+    },
+    [schematic, commitSchematic],
+  );
+
+  // ── Join selected wires into a cable (FR-CJ-01 – FR-CJ-03) ──
+  const handleJoinWires = useCallback(
+    (wireIds: string[]) => {
+      const wiresToJoin = schematic.wires.filter((w) => wireIds.includes(w.id));
+      if (wiresToJoin.length < 2) return;
+
+      // Position join node at centroid of wire toEnd connector positions
+      const toConnectors = wiresToJoin.map((w) =>
+        schematic.connectors.find((c) => c.id === w.toEnd.connectorId),
+      );
+      const validConnectors = toConnectors.filter(Boolean) as ConnectorInstance[];
+      const cx =
+        validConnectors.length > 0
+          ? validConnectors.reduce((s, c) => s + c.x, 0) / validConnectors.length
+          : 300;
+      const cy =
+        validConnectors.length > 0
+          ? validConnectors.reduce((s, c) => s + c.y, 0) / validConnectors.length
+          : 300;
+
+      const cableId = makeId<'Cable'>();
+      const joinNodeObj: JoinNode = {
+        id: makeId<'JoinNode'>(),
+        x: cx,
+        y: cy,
+        label: `JN${schematic.joinNodes.length + 1}`,
+        cableId,
+        fanInLengthMm: 0,
+      };
+
+      const cable: Cable = {
+        id: cableId,
+        label: `Cable ${schematic.cables.length + 1}`,
+        notes: '',
+        overallLengthMm: null,
+        endA: { outerJacketStripLengthMm: 0, shieldTreatment: 'none', drainWireLengthMm: null, pigtailLengthMm: null, tapeShrinkStartMm: null, tapeShrinkLengthMm: null },
+        endB: { outerJacketStripLengthMm: 0, shieldTreatment: 'none', drainWireLengthMm: null, pigtailLengthMm: null, tapeShrinkStartMm: null, tapeShrinkLengthMm: null },
+      };
+
+      // Update incoming wires: terminate at join node
+      const updatedWires = wiresToJoin.map((w, i) => ({
+        ...w,
+        toEnd: { connectorId: joinNodeObj.id, pinNumber: i + 1 },
+      }));
+
+      const wireIdSet = new Set(wireIds);
+      commitSchematic({
+        ...schematic,
+        joinNodes: [...schematic.joinNodes, joinNodeObj],
+        cables: [...schematic.cables, cable],
+        wires: [
+          ...schematic.wires.filter((w) => !wireIdSet.has(w.id)),
+          ...updatedWires,
+        ],
+      });
+      setSelectedWireIds([]);
+    },
+    [schematic, commitSchematic],
+  );
+
   // ── Insert splice node (called from toolbar) ──
   const insertSplice = useCallback(
     (type: '3way' | '4way', x: number, y: number) => {
@@ -531,11 +796,13 @@ const SchematicCanvas: FC<Props> = ({
 
   return (
     <div
+      ref={canvasContainerRef}
       style={{ width: '100%', height: '100%', position: 'relative' }}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
+      onClick={() => cableContextMenu && setCableContextMenu(null)}
     >
-      {/* Splice insert toolbar */}
+      {/* Toolbar */}
       <div
         style={{
           position: 'absolute',
@@ -574,7 +841,64 @@ const SchematicCanvas: FC<Props> = ({
         >
           + X-splice
         </button>
+        {/* Join wires button — visible when 2+ wire edges selected (FR-CJ-01) */}
+        {selectedWireIds.length >= 2 && (
+          <button
+            onClick={() => handleJoinWires(selectedWireIds)}
+            title="Join selected wires into a cable"
+            style={{
+              padding: '4px 10px',
+              fontSize: 11,
+              background: '#f0fdf4',
+              border: '1px solid #166534',
+              borderRadius: 4,
+              cursor: 'pointer',
+              color: '#166534',
+              fontWeight: 600,
+            }}
+          >
+            Join into cable ({selectedWireIds.length})
+          </button>
+        )}
       </div>
+
+      {/* Cable right-click context menu (FR-CS-01) */}
+      {cableContextMenu && (
+        <div
+          style={{
+            position: 'fixed',
+            left: cableContextMenu.x,
+            top: cableContextMenu.y,
+            zIndex: 100,
+            background: '#fff',
+            border: '1px solid #cbd5e1',
+            borderRadius: 6,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            fontFamily: 'sans-serif',
+            fontSize: 12,
+            minWidth: 160,
+          }}
+        >
+          <button
+            onClick={() => handleSplitCable(cableContextMenu.cableId)}
+            style={{
+              width: '100%',
+              textAlign: 'left',
+              padding: '8px 12px',
+              border: 'none',
+              background: 'none',
+              cursor: 'pointer',
+              color: '#92400e',
+              fontWeight: 600,
+              fontSize: 12,
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = '#fef9c3')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
+          >
+            ✂ Split cable here
+          </button>
+        </div>
+      )}
 
       <ReactFlow
         nodes={nodes}
@@ -586,6 +910,7 @@ const SchematicCanvas: FC<Props> = ({
         onConnect={handleConnect}
         onNodesDelete={handleNodesDelete}
         onEdgesDelete={handleEdgesDelete}
+        onEdgeContextMenu={handleEdgeContextMenu}
         onSelectionChange={handleSelectionChange}
         selectionMode={SelectionMode.Partial}
         fitView

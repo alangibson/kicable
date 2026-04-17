@@ -10,7 +10,7 @@
  * LEN-07  Info    : override length differs from schematic-calculated by > 20%
  */
 
-import type { Wire, Cable } from './schematic.js';
+import type { Wire, Cable, Schematic } from './schematic.js';
 
 export type DrcSeverity = 'info' | 'warning' | 'error';
 
@@ -110,6 +110,104 @@ export function runWireDrc(wire: Wire, opts: WireDrcOptions): DrcViolation[] {
         code: 'LEN-07',
         severity: 'info',
         message: `Override length (${wire.overrideLengthMm} mm) differs from schematic-calculated (${opts.schematicLengthMm.toFixed(1)} mm) by ${(pct * 100).toFixed(0)}%.`,
+      });
+    }
+  }
+
+  return violations;
+}
+
+/**
+ * Run split/join node DRC checks (§6.6.4).
+ *
+ * JOIN-01  Warning : conductors in cable have mixed gauges
+ * JOIN-02  Error   : join node has fewer than 2 incoming conductors
+ * SPLIT-01 Warning : fan-out wire has no further connection
+ * SPLIT-02 Info    : fan-out length is 0 mm
+ * SPLIT-03 Error   : split node references cable not in schematic, or incoming wires don't belong to that cable
+ */
+export function runSplitJoinDrc(schematic: Schematic): DrcViolation[] {
+  const violations: DrcViolation[] = [];
+  const { wires, splitNodes, joinNodes, connectors, cables } = schematic;
+
+  // Build set of all canvas node IDs for connectivity checks
+  const allNodeIds = new Set<string>([
+    ...connectors.map((c) => c.id),
+    ...schematic.spliceNodes.map((s) => s.id),
+    ...splitNodes.map((s) => s.id),
+    ...joinNodes.map((j) => j.id),
+  ]);
+
+  for (const sn of splitNodes) {
+    const nodeLabel = sn.label || sn.id.slice(0, 8);
+
+    // Fan-out wires: fromEnd points to this split node
+    const fanOutWires = wires.filter((w) => w.fromEnd.connectorId === sn.id);
+
+    // SPLIT-01: fan-out wire has no further connection
+    for (const fw of fanOutWires) {
+      if (!allNodeIds.has(fw.toEnd.connectorId)) {
+        violations.push({
+          code: 'SPLIT-01',
+          severity: 'warning',
+          message: `Fan-out wire "${fw.label || fw.id.slice(0, 8)}" from split node "${nodeLabel}" has no further connection.`,
+        });
+      }
+    }
+
+    // SPLIT-02: fan-out length is 0 mm
+    if (sn.fanOutLengthMm === 0) {
+      violations.push({
+        code: 'SPLIT-02',
+        severity: 'info',
+        message: `Split node "${nodeLabel}" fan-out length is 0 mm.`,
+      });
+    }
+
+    // SPLIT-03: split node references unknown cable or incoming wires don't match
+    if (sn.cableId) {
+      const cable = cables.find((c) => c.id === sn.cableId);
+      if (!cable) {
+        violations.push({
+          code: 'SPLIT-03',
+          severity: 'error',
+          message: `Split node "${nodeLabel}" references unknown cable ${sn.cableId.slice(0, 8)}.`,
+        });
+      } else {
+        const incomingWires = wires.filter((w) => w.toEnd.connectorId === sn.id);
+        const mismatched = incomingWires.filter((w) => w.cableId !== sn.cableId);
+        if (mismatched.length > 0) {
+          violations.push({
+            code: 'SPLIT-03',
+            severity: 'error',
+            message: `Split node "${nodeLabel}" has ${mismatched.length} incoming conductor(s) not belonging to cable "${cable.label || cable.id.slice(0, 8)}".`,
+          });
+        }
+      }
+    }
+  }
+
+  for (const jn of joinNodes) {
+    const nodeLabel = jn.label || jn.id.slice(0, 8);
+    const incomingWires = wires.filter((w) => w.toEnd.connectorId === jn.id);
+
+    // JOIN-01: mixed gauges among incoming conductors
+    const gaugesAwg = new Set(incomingWires.filter((w) => w.gaugeAwg != null).map((w) => w.gaugeAwg));
+    const gaugesMm2 = new Set(incomingWires.filter((w) => w.gaugeMm2 != null).map((w) => w.gaugeMm2));
+    if (gaugesAwg.size > 1 || gaugesMm2.size > 1 || (gaugesAwg.size > 0 && gaugesMm2.size > 0)) {
+      violations.push({
+        code: 'JOIN-01',
+        severity: 'warning',
+        message: `Join node "${nodeLabel}" has conductors with mixed gauges.`,
+      });
+    }
+
+    // JOIN-02: fewer than 2 incoming conductors
+    if (incomingWires.length < 2) {
+      violations.push({
+        code: 'JOIN-02',
+        severity: 'error',
+        message: `Join node "${nodeLabel}" has ${incomingWires.length} incoming conductor(s); at least 2 required.`,
       });
     }
   }

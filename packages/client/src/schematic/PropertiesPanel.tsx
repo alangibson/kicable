@@ -20,9 +20,11 @@ import type {
   Cable,
   CableEnd,
   ConnectorInstance,
+  JoinNode,
   Project,
   Schematic,
   SpliceNode,
+  SplitNode,
   Wire,
   WireEnd,
   WireSegment,
@@ -36,6 +38,7 @@ import {
   getColorStandardEntries,
   getEffectiveLengthMm,
   makeId,
+  runSplitJoinDrc,
   runWireDrc,
   wireInsulationOdMm,
   type DrcViolation,
@@ -108,6 +111,270 @@ const Accordion: FC<{
         <div style={{ padding: '8px 8px 4px' }}>{children}</div>
       )}
     </div>
+  );
+};
+
+// ── Split node properties (FR-CS-03, FR-CS-07) ───────────────────────────────
+
+const SplitNodeProps: FC<{
+  splitNode: SplitNode;
+  schematic: Schematic;
+  editor: UseEditorStateReturn;
+}> = ({ splitNode, schematic, editor }) => {
+  const [label, setLabel] = useState(splitNode.label);
+  const [fanOutLengthMm, setFanOutLengthMm] = useState(splitNode.fanOutLengthMm);
+  useEffect(() => {
+    setLabel(splitNode.label);
+    setFanOutLengthMm(splitNode.fanOutLengthMm);
+  }, [splitNode]);
+
+  function save() {
+    editor.upsertSplitNode({ ...splitNode, label, fanOutLengthMm });
+  }
+
+  const incomingWires = schematic.wires.filter((w) => w.toEnd.connectorId === splitNode.id);
+  const fanOutWires = schematic.wires.filter((w) => w.fromEnd.connectorId === splitNode.id);
+  const cable = splitNode.cableId ? schematic.cables.find((c) => c.id === splitNode.cableId) : null;
+
+  const drcViolations = runSplitJoinDrc(schematic).filter(
+    (v) => v.code.startsWith('SPLIT'),
+  );
+
+  // Re-merge: restore conductor wires' toEnds from fan-out wires, delete fan-out wires and split node
+  function handleRemerge() {
+    const restoredConductors = incomingWires.map((c) => {
+      const matching = fanOutWires.find((f) => f.fromEnd.pinNumber === c.toEnd.pinNumber);
+      return matching ? { ...c, cableId: cable?.id ?? c.cableId, toEnd: matching.toEnd } : c;
+    });
+    const fanOutIds = new Set(fanOutWires.map((f) => f.id));
+    const incomingIds = new Set(incomingWires.map((c) => c.id));
+    editor.commitSchematic({
+      ...schematic,
+      splitNodes: schematic.splitNodes.filter((s) => s.id !== splitNode.id),
+      wires: [
+        ...schematic.wires.filter((w) => !fanOutIds.has(w.id) && !incomingIds.has(w.id)),
+        ...restoredConductors,
+      ],
+    });
+  }
+
+  return (
+    <>
+      <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 10, color: '#1e293b' }}>
+        Split Node
+      </div>
+
+      <DrcBadge violations={drcViolations} />
+
+      <div style={fieldStyle}>
+        <div style={labelStyle}>Label</div>
+        <input
+          style={inputStyle}
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          onBlur={save}
+          onKeyDown={(e) => e.key === 'Enter' && save()}
+          placeholder="SP1…"
+        />
+      </div>
+
+      <div style={fieldStyle}>
+        <div style={labelStyle}>Fan-out length (mm)</div>
+        <input
+          type="number"
+          min={0}
+          step={1}
+          style={inputStyle}
+          value={fanOutLengthMm}
+          onChange={(e) => setFanOutLengthMm(parseFloat(e.target.value) || 0)}
+          onBlur={save}
+        />
+      </div>
+
+      {cable && (
+        <div style={{ ...fieldStyle, fontSize: 10, color: '#64748b' }}>
+          Cable: {cable.label || cable.id.slice(0, 8)}
+        </div>
+      )}
+
+      <div style={fieldStyle}>
+        <div style={labelStyle}>Conductors in ({incomingWires.length})</div>
+        {incomingWires.map((w) => (
+          <div key={w.id} style={{ fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, padding: '1px 0' }}>
+            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: w.colorHex, border: '1px solid #e2e8f0', flexShrink: 0 }} />
+            <span>{w.label || w.id.slice(0, 8)}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={fieldStyle}>
+        <div style={labelStyle}>Fan-out wires ({fanOutWires.length})</div>
+        {fanOutWires.map((w) => (
+          <div key={w.id} style={{ fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, padding: '1px 0' }}>
+            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: w.colorHex, border: '1px solid #e2e8f0', flexShrink: 0 }} />
+            <span>{w.label || w.id.slice(0, 8)}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* FR-CS-07: re-merge option */}
+      <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <button
+          onClick={handleRemerge}
+          title="Re-merge fan-out wires back into the cable"
+          style={{
+            fontSize: 10,
+            padding: '3px 8px',
+            border: '1px solid #92400e',
+            borderRadius: 3,
+            background: '#fffbeb',
+            color: '#92400e',
+            cursor: 'pointer',
+          }}
+        >
+          Re-merge into cable
+        </button>
+        <button
+          onClick={() => editor.removeSplitNode(splitNode.id)}
+          title="Delete split node (leave fan-out wires as standalone)"
+          style={{
+            fontSize: 10,
+            padding: '3px 8px',
+            border: '1px solid #fca5a5',
+            borderRadius: 3,
+            background: '#fff1f2',
+            color: '#dc2626',
+            cursor: 'pointer',
+          }}
+        >
+          Delete (leave standalone)
+        </button>
+      </div>
+    </>
+  );
+};
+
+// ── Join node properties (FR-CJ-02, FR-CJ-05) ────────────────────────────────
+
+const JoinNodeProps: FC<{
+  joinNode: JoinNode;
+  schematic: Schematic;
+  editor: UseEditorStateReturn;
+}> = ({ joinNode, schematic, editor }) => {
+  const [label, setLabel] = useState(joinNode.label);
+  const [fanInLengthMm, setFanInLengthMm] = useState(joinNode.fanInLengthMm);
+  useEffect(() => {
+    setLabel(joinNode.label);
+    setFanInLengthMm(joinNode.fanInLengthMm);
+  }, [joinNode]);
+
+  function save() {
+    editor.upsertJoinNode({ ...joinNode, label, fanInLengthMm });
+  }
+
+  const incomingWires = schematic.wires.filter((w) => w.toEnd.connectorId === joinNode.id);
+  const outgoingWires = schematic.wires.filter((w) => w.fromEnd.connectorId === joinNode.id);
+  const cable = joinNode.cableId ? schematic.cables.find((c) => c.id === joinNode.cableId) : null;
+
+  const drcViolations = runSplitJoinDrc(schematic).filter(
+    (v) => v.code.startsWith('JOIN'),
+  );
+
+  // Dissolve join: remove join node, cable, and output conductor wires (FR-CJ-05)
+  function handleDissolve() {
+    const outIds = new Set(outgoingWires.map((w) => w.id));
+    editor.commitSchematic({
+      ...schematic,
+      joinNodes: schematic.joinNodes.filter((j) => j.id !== joinNode.id),
+      cables: joinNode.cableId
+        ? schematic.cables.filter((c) => c.id !== joinNode.cableId)
+        : schematic.cables,
+      wires: schematic.wires.filter(
+        (w) => !outIds.has(w.id) && w.toEnd.connectorId !== joinNode.id,
+      ),
+    });
+  }
+
+  return (
+    <>
+      <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 10, color: '#1e293b' }}>
+        Join Node
+      </div>
+
+      <DrcBadge violations={drcViolations} />
+
+      <div style={fieldStyle}>
+        <div style={labelStyle}>Label</div>
+        <input
+          style={inputStyle}
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          onBlur={save}
+          onKeyDown={(e) => e.key === 'Enter' && save()}
+          placeholder="JN1…"
+        />
+      </div>
+
+      <div style={fieldStyle}>
+        <div style={labelStyle}>Fan-in length (mm)</div>
+        <input
+          type="number"
+          min={0}
+          step={1}
+          style={inputStyle}
+          value={fanInLengthMm}
+          onChange={(e) => setFanInLengthMm(parseFloat(e.target.value) || 0)}
+          onBlur={save}
+        />
+      </div>
+
+      {cable && (
+        <div style={{ ...fieldStyle, fontSize: 10, color: '#64748b' }}>
+          Cable out: {cable.label || cable.id.slice(0, 8)}
+        </div>
+      )}
+
+      <div style={fieldStyle}>
+        <div style={labelStyle}>Incoming wires ({incomingWires.length})</div>
+        {incomingWires.map((w) => (
+          <div key={w.id} style={{ fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, padding: '1px 0' }}>
+            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: w.colorHex, border: '1px solid #e2e8f0', flexShrink: 0 }} />
+            <span>{w.label || w.id.slice(0, 8)}</span>
+            {w.signalName && <span style={{ color: '#64748b' }}>· {w.signalName}</span>}
+          </div>
+        ))}
+      </div>
+
+      {outgoingWires.length > 0 && (
+        <div style={fieldStyle}>
+          <div style={labelStyle}>Outgoing conductors ({outgoingWires.length})</div>
+          {outgoingWires.map((w) => (
+            <div key={w.id} style={{ fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, padding: '1px 0' }}>
+              <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: w.colorHex, border: '1px solid #e2e8f0', flexShrink: 0 }} />
+              <span>{w.label || w.id.slice(0, 8)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* FR-CJ-05: dissolve join node */}
+      <button
+        onClick={handleDissolve}
+        title="Dissolve join node — cable removed, wires become standalone"
+        style={{
+          marginTop: 8,
+          fontSize: 10,
+          padding: '3px 8px',
+          border: '1px solid #fca5a5',
+          borderRadius: 3,
+          background: '#fff1f2',
+          color: '#dc2626',
+          cursor: 'pointer',
+        }}
+      >
+        Dissolve join node
+      </button>
+    </>
   );
 };
 
@@ -1524,6 +1791,18 @@ const PropertiesPanel: FC<Props> = ({ selection, schematic, editor, project }) =
         (() => {
           const s = schematic.spliceNodes.find((x) => x.id === selection.id);
           return s ? <SpliceProps splice={s} editor={editor} /> : null;
+        })()}
+
+      {selection?.kind === 'splitNode' &&
+        (() => {
+          const sn = schematic.splitNodes.find((x) => x.id === selection.id);
+          return sn ? <SplitNodeProps splitNode={sn} schematic={schematic} editor={editor} /> : null;
+        })()}
+
+      {selection?.kind === 'joinNode' &&
+        (() => {
+          const jn = schematic.joinNodes.find((x) => x.id === selection.id);
+          return jn ? <JoinNodeProps joinNode={jn} schematic={schematic} editor={editor} /> : null;
         })()}
 
       {selection?.kind === 'wire' &&

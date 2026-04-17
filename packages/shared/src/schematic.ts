@@ -161,6 +161,46 @@ export const SpliceNodeSchema = z.object({
 export type SpliceNode = z.infer<typeof SpliceNodeSchema>;
 
 // ---------------------------------------------------------------------------
+// SplitNode — cable split point on canvas (FR-CS-03)
+//
+// Wire topology after a split:
+//   Conductor wires (cableId = X):  fromEnd → SplitNode   (toEnd.connectorId = splitNode.id)
+//   Fan-out wires   (cableId = null): SplitNode → downstream connector
+// ---------------------------------------------------------------------------
+
+export const SplitNodeSchema = z.object({
+  id: z.string().uuid(),
+  x: z.number().default(0),
+  y: z.number().default(0),
+  label: z.string().max(64).default(''),
+  /** Originating cable being split (for DRC SPLIT-03) */
+  cableId: z.string().uuid().nullable().default(null),
+  /** Fan-out stub length in mm, default 0 (FR-CS-03) */
+  fanOutLengthMm: z.number().nonnegative().default(0),
+});
+export type SplitNode = z.infer<typeof SplitNodeSchema>;
+
+// ---------------------------------------------------------------------------
+// JoinNode — cable join point on canvas (FR-CJ-03)
+//
+// Wire topology around a join:
+//   Incoming wires (standalone): fromEnd → JoinNode  (toEnd.connectorId = joinNode.id)
+//   Output conductor wires (cableId = X): JoinNode → downstream connector
+// ---------------------------------------------------------------------------
+
+export const JoinNodeSchema = z.object({
+  id: z.string().uuid(),
+  x: z.number().default(0),
+  y: z.number().default(0),
+  label: z.string().max(64).default(''),
+  /** Resulting cable produced by the join */
+  cableId: z.string().uuid().nullable().default(null),
+  /** Fan-in stub length per conductor in mm (FR-CJ-02) */
+  fanInLengthMm: z.number().nonnegative().default(0),
+});
+export type JoinNode = z.infer<typeof JoinNodeSchema>;
+
+// ---------------------------------------------------------------------------
 // Schematic — full canvas data stored in Project.schematic
 // ---------------------------------------------------------------------------
 
@@ -172,6 +212,8 @@ export const SchematicSchema = z.object({
   signals: z.array(SignalSchema).default([]),
   protectiveSpans: z.array(ProtectiveMaterialSpanSchema).default([]),
   spliceNodes: z.array(SpliceNodeSchema).default([]),
+  splitNodes: z.array(SplitNodeSchema).default([]),
+  joinNodes: z.array(JoinNodeSchema).default([]),
 });
 export type Schematic = z.infer<typeof SchematicSchema>;
 
@@ -183,6 +225,8 @@ export const EMPTY_SCHEMATIC: Schematic = {
   signals: [],
   protectiveSpans: [],
   spliceNodes: [],
+  splitNodes: [],
+  joinNodes: [],
 };
 
 // ---------------------------------------------------------------------------

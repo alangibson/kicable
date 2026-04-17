@@ -13,11 +13,13 @@ import {
   type Bundle,
   type Cable,
   type ConnectorInstance,
+  type JoinNode,
   type Project,
   type ProtectiveMaterialSpan,
   type Schematic,
   type Signal,
   type SpliceNode,
+  type SplitNode,
   type Wire,
   makeId,
 } from '@kicable/shared';
@@ -47,6 +49,12 @@ export interface UseEditorStateReturn {
   removeSpan: (id: string) => void;
   upsertSplice: (s: SpliceNode) => void;
   removeSplice: (id: string) => void;
+  upsertSplitNode: (s: SplitNode) => void;
+  removeSplitNode: (id: string) => void;
+  upsertJoinNode: (j: JoinNode) => void;
+  removeJoinNode: (id: string) => void;
+  /** Commit an externally-constructed schematic (e.g. split/join batch operations) */
+  commitSchematic: (s: Schematic) => void;
   /** True while an auto-save is in-flight */
   saving: boolean;
   saveError: string | null;
@@ -266,6 +274,33 @@ export function useEditorState(
     [schematic, commit],
   );
 
+  const upsertSplitNode = useCallback(
+    (s: SplitNode) =>
+      commit({ ...schematic, splitNodes: upsertIn(schematic.splitNodes, s) }),
+    [schematic, commit],
+  );
+  const removeSplitNode = useCallback(
+    (id: string) =>
+      commit({ ...schematic, splitNodes: removeFrom(schematic.splitNodes, id) }),
+    [schematic, commit],
+  );
+
+  const upsertJoinNode = useCallback(
+    (j: JoinNode) =>
+      commit({ ...schematic, joinNodes: upsertIn(schematic.joinNodes, j) }),
+    [schematic, commit],
+  );
+  const removeJoinNode = useCallback(
+    (id: string) =>
+      commit({ ...schematic, joinNodes: removeFrom(schematic.joinNodes, id) }),
+    [schematic, commit],
+  );
+
+  const commitSchematic = useCallback(
+    (s: Schematic) => commit(s),
+    [commit],
+  );
+
   // historyVersion is read to derive canUndo/canRedo without stale closures
   void historyVersion;
 
@@ -286,6 +321,11 @@ export function useEditorState(
     removeSpan,
     upsertSplice,
     removeSplice,
+    upsertSplitNode,
+    removeSplitNode,
+    upsertJoinNode,
+    removeJoinNode,
+    commitSchematic,
     saving,
     saveError,
     undo,

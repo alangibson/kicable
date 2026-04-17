@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { runWireDrc, runCableDrc } from '../drc.js';
-import type { Wire, Cable } from '../schematic.js';
+import { runWireDrc, runCableDrc, runSplitJoinDrc } from '../drc.js';
+import type { Wire, Cable, Schematic } from '../schematic.js';
+import { EMPTY_SCHEMATIC } from '../schematic.js';
 
 const now = new Date().toISOString();
 const uuid = () => crypto.randomUUID();
@@ -228,6 +229,175 @@ describe('runCableDrc', () => {
     const cable = baseCable();
     cable.endA.outerJacketStripLengthMm = 999;
     const v = runCableDrc(cable, null);
+    expect(v).toHaveLength(0);
+  });
+});
+
+// ── Helpers for split/join DRC tests ──────────────────────────────────────────
+
+function baseSchematic(overrides?: Partial<Schematic>): Schematic {
+  return { ...EMPTY_SCHEMATIC, ...overrides };
+}
+
+function makeSplitNode(overrides?: Partial<Schematic['splitNodes'][number]>) {
+  return {
+    id: uuid(),
+    x: 0,
+    y: 0,
+    label: 'SP1',
+    cableId: null,
+    fanOutLengthMm: 0,
+    ...overrides,
+  };
+}
+
+function makeJoinNode(overrides?: Partial<Schematic['joinNodes'][number]>) {
+  return {
+    id: uuid(),
+    x: 0,
+    y: 0,
+    label: 'JN1',
+    cableId: null,
+    fanInLengthMm: 0,
+    ...overrides,
+  };
+}
+
+function makeConnector(idOverride?: string) {
+  return { id: idOverride ?? uuid(), componentId: uuid(), componentVersion: 0, label: '', x: 0, y: 0 };
+}
+
+describe('runSplitJoinDrc', () => {
+  // ── SPLIT-01 ──────────────────────────────────────────────────────────────
+
+  it('SPLIT-01: warns when fan-out wire has no further connection', () => {
+    const splitNode = makeSplitNode();
+    const fanOutWire = baseWire();
+    fanOutWire.fromEnd = { connectorId: splitNode.id, pinNumber: 1 };
+    // toEnd.connectorId is a random uuid not in any node list → no further connection
+    const s = baseSchematic({ splitNodes: [splitNode], wires: [fanOutWire] });
+    const v = runSplitJoinDrc(s);
+    expect(v.some((x) => x.code === 'SPLIT-01')).toBe(true);
+    expect(v.find((x) => x.code === 'SPLIT-01')!.severity).toBe('warning');
+  });
+
+  it('SPLIT-01: does not fire when fan-out wire connects to a valid connector', () => {
+    const splitNode = makeSplitNode();
+    const connector = makeConnector();
+    const fanOutWire = baseWire();
+    fanOutWire.fromEnd = { connectorId: splitNode.id, pinNumber: 1 };
+    fanOutWire.toEnd = { connectorId: connector.id, pinNumber: 1 };
+    const s = baseSchematic({ splitNodes: [splitNode], connectors: [connector], wires: [fanOutWire] });
+    const v = runSplitJoinDrc(s);
+    expect(v.some((x) => x.code === 'SPLIT-01')).toBe(false);
+  });
+
+  // ── SPLIT-02 ──────────────────────────────────────────────────────────────
+
+  it('SPLIT-02: info when fan-out length is 0 mm', () => {
+    const splitNode = makeSplitNode({ fanOutLengthMm: 0 });
+    const s = baseSchematic({ splitNodes: [splitNode] });
+    const v = runSplitJoinDrc(s);
+    expect(v.some((x) => x.code === 'SPLIT-02')).toBe(true);
+    expect(v.find((x) => x.code === 'SPLIT-02')!.severity).toBe('info');
+  });
+
+  it('SPLIT-02: does not fire when fan-out length > 0', () => {
+    const splitNode = makeSplitNode({ fanOutLengthMm: 50 });
+    const s = baseSchematic({ splitNodes: [splitNode] });
+    const v = runSplitJoinDrc(s);
+    expect(v.some((x) => x.code === 'SPLIT-02')).toBe(false);
+  });
+
+  // ── SPLIT-03 ──────────────────────────────────────────────────────────────
+
+  it('SPLIT-03: error when split node references unknown cable', () => {
+    const splitNode = makeSplitNode({ cableId: uuid() }); // random uuid, no cable
+    const s = baseSchematic({ splitNodes: [splitNode] });
+    const v = runSplitJoinDrc(s);
+    expect(v.some((x) => x.code === 'SPLIT-03')).toBe(true);
+    expect(v.find((x) => x.code === 'SPLIT-03')!.severity).toBe('error');
+  });
+
+  it('SPLIT-03: does not fire when cableId is null', () => {
+    const splitNode = makeSplitNode({ cableId: null, fanOutLengthMm: 10 });
+    const s = baseSchematic({ splitNodes: [splitNode] });
+    const v = runSplitJoinDrc(s);
+    expect(v.some((x) => x.code === 'SPLIT-03')).toBe(false);
+  });
+
+  it('SPLIT-03: error when incoming conductor does not belong to referenced cable', () => {
+    const cable = baseCable();
+    const cable2 = baseCable();
+    const splitNode = makeSplitNode({ cableId: cable.id, fanOutLengthMm: 10 });
+    // Incoming wire belongs to a DIFFERENT cable
+    const incomingWire = baseWire();
+    incomingWire.cableId = cable2.id;
+    incomingWire.toEnd = { connectorId: splitNode.id, pinNumber: 1 };
+    const s = baseSchematic({ splitNodes: [splitNode], cables: [cable, cable2], wires: [incomingWire] });
+    const v = runSplitJoinDrc(s);
+    expect(v.some((x) => x.code === 'SPLIT-03')).toBe(true);
+  });
+
+  // ── JOIN-01 ───────────────────────────────────────────────────────────────
+
+  it('JOIN-01: warns when conductors have mixed AWG gauges', () => {
+    const joinNode = makeJoinNode();
+    const w1 = baseWire();
+    w1.gaugeAwg = 16;
+    w1.gaugeMm2 = null;
+    w1.toEnd = { connectorId: joinNode.id, pinNumber: 1 };
+    const w2 = baseWire();
+    w2.gaugeAwg = 18;
+    w2.gaugeMm2 = null;
+    w2.toEnd = { connectorId: joinNode.id, pinNumber: 2 };
+    const s = baseSchematic({ joinNodes: [joinNode], wires: [w1, w2] });
+    const v = runSplitJoinDrc(s);
+    expect(v.some((x) => x.code === 'JOIN-01')).toBe(true);
+    expect(v.find((x) => x.code === 'JOIN-01')!.severity).toBe('warning');
+  });
+
+  it('JOIN-01: does not fire when all conductors have the same gauge', () => {
+    const joinNode = makeJoinNode();
+    const w1 = baseWire();
+    w1.gaugeAwg = 16;
+    w1.gaugeMm2 = null;
+    w1.toEnd = { connectorId: joinNode.id, pinNumber: 1 };
+    const w2 = baseWire();
+    w2.gaugeAwg = 16;
+    w2.gaugeMm2 = null;
+    w2.toEnd = { connectorId: joinNode.id, pinNumber: 2 };
+    const s = baseSchematic({ joinNodes: [joinNode], wires: [w1, w2] });
+    const v = runSplitJoinDrc(s);
+    expect(v.some((x) => x.code === 'JOIN-01')).toBe(false);
+  });
+
+  // ── JOIN-02 ───────────────────────────────────────────────────────────────
+
+  it('JOIN-02: error when join node has only 1 incoming conductor', () => {
+    const joinNode = makeJoinNode();
+    const w1 = baseWire();
+    w1.toEnd = { connectorId: joinNode.id, pinNumber: 1 };
+    const s = baseSchematic({ joinNodes: [joinNode], wires: [w1] });
+    const v = runSplitJoinDrc(s);
+    expect(v.some((x) => x.code === 'JOIN-02')).toBe(true);
+    expect(v.find((x) => x.code === 'JOIN-02')!.severity).toBe('error');
+  });
+
+  it('JOIN-02: does not fire when join node has 2+ incoming conductors', () => {
+    const joinNode = makeJoinNode();
+    const w1 = baseWire();
+    w1.toEnd = { connectorId: joinNode.id, pinNumber: 1 };
+    const w2 = baseWire();
+    w2.toEnd = { connectorId: joinNode.id, pinNumber: 2 };
+    const s = baseSchematic({ joinNodes: [joinNode], wires: [w1, w2] });
+    const v = runSplitJoinDrc(s);
+    expect(v.some((x) => x.code === 'JOIN-02')).toBe(false);
+  });
+
+  it('returns empty for schematic with no split/join nodes', () => {
+    const s = baseSchematic();
+    const v = runSplitJoinDrc(s);
     expect(v).toHaveLength(0);
   });
 });

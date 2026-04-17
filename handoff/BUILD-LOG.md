@@ -176,6 +176,38 @@ Spec: PRD.md
 
 ---
 
+## Step 6 — §6.6 Cable Split & Join Operations
+
+**Files created:**
+- `packages/client/src/schematic/canvas/SplitNodeComponent.tsx` — canvas node for cable split points; left handles = incoming conductors, right handles = fan-out wires; amber color scheme
+- `packages/client/src/schematic/canvas/JoinNodeComponent.tsx` — canvas node for cable join points; left handles = incoming wires, right handles = outgoing cable conductors; green color scheme
+
+**Files modified:**
+- `packages/shared/src/schematic.ts` — added `SplitNodeSchema`/`SplitNode` and `JoinNodeSchema`/`JoinNode` types; added `splitNodes`/`joinNodes` arrays to `SchematicSchema` and `EMPTY_SCHEMATIC`
+- `packages/shared/src/drc.ts` — added `runSplitJoinDrc` covering JOIN-01, JOIN-02, SPLIT-01, SPLIT-02, SPLIT-03
+- `packages/shared/src/__tests__/drc.test.ts` — 12 new tests for split/join DRC rules
+- `packages/client/src/schematic/useEditorState.ts` — added `upsertSplitNode`, `removeSplitNode`, `upsertJoinNode`, `removeJoinNode`, `commitSchematic` (batch commit for multi-step operations)
+- `packages/client/src/schematic/canvas/SchematicCanvas.tsx` — split/join node types in nodeTypes; `schematicToRFNodes` includes split/join nodes (conductor count derived from wire topology); `handleNodesChange` persists split/join positions; `handleNodesDelete` dissolves split/join nodes with topology restoration; `handleSelectionChange` supports multi-wire selection for join; `onEdgeContextMenu` triggers cable split; "Join into cable" toolbar button; cable right-click context menu with "Split cable here"
+- `packages/client/src/schematic/PropertiesPanel.tsx` — `SplitNodeProps` panel (label, fan-out length, conductors in/out, Re-merge + Delete buttons); `JoinNodeProps` panel (label, fan-in length, incoming wires, Dissolve button); selection handling for `splitNode`/`joinNode` kinds
+
+**Decisions:**
+- Wire topology encodes split/join membership: `toEnd.connectorId === splitNode.id` = conductor wire; `fromEnd.connectorId === splitNode.id` = fan-out wire; similarly for join nodes
+- No `conductorMap` field stored on split/join nodes — topology is implicit in wire endpoints (avoids denormalization)
+- Split operation (FR-CS-02): updates conductor wire toEnds to split node, creates fan-out wires preserving signal/gauge/color/endA, clears endB on fan-outs (FR-CS-05)
+- Dissolve split (FR-CS-07 "re-merge"): restores conductor wire toEnds from fan-out wire toEnds matched by pinNumber, deletes fan-out wires
+- Join operation (FR-CJ-01–03): creates JoinNode at centroid of incoming wire toEnd connectors, creates cable, updates incoming wires' toEnd to join node
+- Dissolve join (FR-CJ-05): removes join node, its cable, and all wires connected to it
+- `commitSchematic` added to `UseEditorStateReturn` to support single-undo multi-entity operations (split, join, dissolve)
+- Handle ID convention: `pin-{N}-left` / `pin-{N}-right` on split/join nodes matches existing wire connection logic
+
+**Verification:**
+- `npm run build -w @kicable/shared` — clean
+- `npm run test -w @kicable/shared` — 81 tests pass (12 new)
+- `npm run test -w @kicable/client` — 48 tests pass (unchanged, no regressions)
+- `npm run typecheck -w @kicable/client` — no new errors (pre-existing test errors unchanged)
+
+---
+
 ## Known Gaps
 
 *(Out-of-scope items discovered during builds go here. Architect triages.)*
